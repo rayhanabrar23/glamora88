@@ -68,10 +68,13 @@ export default function Expenses() {
       />
       <div className="grid gap-4 lg:grid-cols-[1.5fr_1fr]">
         <Card
+          className="min-w-0"
           padded={false}
           title="Daftar biaya"
           actions={
-            <Input type="month" className="h-9 w-[160px]" value={month} onChange={(e) => setMonth(e.target.value)} aria-label="Filter bulan" />
+            <div className="w-[170px] shrink-0">
+              <Input type="month" className="h-9" value={month} onChange={(e) => setMonth(e.target.value)} aria-label="Filter bulan" />
+            </div>
           }
         >
           {!rows.length ? (
