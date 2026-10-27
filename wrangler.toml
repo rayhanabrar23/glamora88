@@ -2,6 +2,8 @@
 name = "glamora88"
 main = "worker/index.ts"
 compatibility_date = "2025-01-01"
+# Jangan hapus variabel yang diatur lewat dashboard Cloudflare saat deploy otomatis
+keep_vars = true
 
 [assets]
 directory = "./dist"
