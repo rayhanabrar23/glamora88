@@ -24,9 +24,8 @@ export default function Login({ onSuccess }: { onSuccess: () => void }) {
     <div className="flex min-h-full items-center justify-center px-4 py-12">
       <div className="w-full max-w-[400px]">
         <div className="mb-8 text-center">
-          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-navy font-display text-[26px] text-[#d8b878]">88</div>
-          <h1 className="mt-5 font-display text-[30px] text-navy">Glamora</h1>
-          <p className="mt-1 text-[14px] tracking-[0.14em] text-muted uppercase">Portal Bisnis</p>
+          <img src="/logo.png" alt="Glamora88" className="mx-auto h-[150px] w-auto" />
+          <p className="mt-4 text-[13px] tracking-[0.18em] text-muted uppercase">Portal Bisnis</p>
         </div>
         <form onSubmit={submit} className="rounded-2xl border border-line bg-surface p-7 shadow-[0_8px_30px_rgba(27,35,51,0.06)]">
           <label className="block">

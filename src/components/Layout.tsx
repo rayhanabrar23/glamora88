@@ -16,9 +16,9 @@ const NAV = [
 function Brand() {
   return (
     <div className="flex items-center gap-3 px-2">
-      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-navy font-display text-[19px] text-[#d8b878]">88</div>
+      <img src="/logo-mark.png" alt="Glamora88" className="h-11 w-11 object-contain" />
       <div>
-        <div className="font-display text-[19px] leading-none text-navy">Glamora</div>
+        <div className="text-[16px] leading-none font-semibold tracking-[0.12em] text-[#a8843f] uppercase">Glamora.id</div>
         <div className="mt-1 text-[11.5px] tracking-[0.14em] text-muted uppercase">Portal Bisnis</div>
       </div>
     </div>
