@@ -116,6 +116,19 @@ export const SCHEMA: string[] = [
     notes TEXT
   )`,
   `CREATE INDEX IF NOT EXISTS idx_live_start ON live_sessions(start_at)`,
+  `CREATE TABLE IF NOT EXISTS settlements (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    store TEXT NOT NULL,
+    ref_id TEXT NOT NULL,
+    kind TEXT NOT NULL DEFAULT 'Order',
+    settled_at TEXT,
+    order_created_at TEXT,
+    revenue REAL NOT NULL DEFAULT 0,
+    fees REAL NOT NULL DEFAULT 0,
+    amount REAL NOT NULL DEFAULT 0,
+    details TEXT,
+    UNIQUE(store, ref_id, kind)
+  )`,
 ]
 
 export const DEFAULT_SETTINGS: Record<string, string> = {

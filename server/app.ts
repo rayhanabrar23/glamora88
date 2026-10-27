@@ -39,7 +39,7 @@ app.get('/me', (c) => c.json({ ok: true }))
 
 // ---------- Helper ----------
 async function loadBundle(db: D1Database): Promise<DataBundle> {
-  const [settings, products, variants, sales, purchases, purchaseItems, adjustments, boosts, expenses] = await Promise.all([
+  const [settings, products, variants, sales, purchases, purchaseItems, adjustments, boosts, expenses, settlements] = await Promise.all([
     getSettings(db),
     db.prepare('SELECT * FROM products').all(),
     db.prepare('SELECT * FROM variants').all(),
@@ -49,6 +49,7 @@ async function loadBundle(db: D1Database): Promise<DataBundle> {
     db.prepare('SELECT * FROM stock_adjustments').all(),
     db.prepare('SELECT * FROM boosts').all(),
     db.prepare('SELECT * FROM expenses').all(),
+    db.prepare('SELECT store, ref_id, kind, fees FROM settlements').all(),
   ])
   return {
     settings,
@@ -60,6 +61,7 @@ async function loadBundle(db: D1Database): Promise<DataBundle> {
     adjustments: adjustments.results as never,
     boosts: boosts.results as never,
     expenses: expenses.results as never,
+    settlements: settlements.results as never,
   }
 }
 
@@ -410,6 +412,125 @@ app.delete('/expenses/:id', async (c) => {
   return c.json({ ok: true })
 })
 
+// ---------- Settlement / pencairan TikTok ----------
+type SettlementRow = {
+  store: string
+  ref_id: string
+  kind: string
+  settled_at: string | null
+  order_created_at: string | null
+  revenue: number
+  fees: number
+  amount: number
+  details: string | null
+}
+app.post('/settlements/import', async (c) => {
+  const body = await c.req.json<{ store: string; lines: Omit<SettlementRow, 'store' | 'details'> & { details: Record<string, number> }[] }>()
+  if (!body.store) return c.json({ error: 'Pilih toko terlebih dahulu' }, 400)
+  const lines = body.lines as unknown as (Omit<SettlementRow, 'details' | 'store'> & { details: Record<string, number> })[]
+  await runBatched(
+    c.env.DB,
+    lines.map((l) =>
+      c.env.DB.prepare(
+        `INSERT INTO settlements (store, ref_id, kind, settled_at, order_created_at, revenue, fees, amount, details) VALUES (?,?,?,?,?,?,?,?,?)
+         ON CONFLICT(store, ref_id, kind) DO UPDATE SET settled_at=excluded.settled_at, order_created_at=excluded.order_created_at,
+         revenue=excluded.revenue, fees=excluded.fees, amount=excluded.amount, details=excluded.details`,
+      ).bind(body.store, l.ref_id, l.kind || 'Order', l.settled_at, l.order_created_at, num(l.revenue), num(l.fees), num(l.amount), JSON.stringify(l.details ?? {})),
+    ),
+  )
+  return c.json({ ok: true, saved: lines.length })
+})
+app.delete('/settlements', async (c) => {
+  const store = c.req.query('store')
+  if (store) await c.env.DB.prepare('DELETE FROM settlements WHERE store = ?').bind(store).run()
+  else await c.env.DB.prepare('DELETE FROM settlements').run()
+  return c.json({ ok: true })
+})
+app.get('/settlements/report', async (c) => {
+  const [st, sales, settings] = await Promise.all([
+    c.env.DB.prepare('SELECT * FROM settlements').all<SettlementRow>(),
+    c.env.DB.prepare('SELECT * FROM sales').all<Record<string, unknown>>(),
+    getSettings(c.env.DB),
+  ])
+  const rows = st.results
+  const sum = (f: (r: SettlementRow) => number, rr = rows) => rr.reduce((a, r) => a + f(r), 0)
+  const isOrder = (k: string) => /order|pesanan/i.test(k)
+  // per bulan pencairan
+  const byMonth = new Map<string, { month: string; count: number; revenue: number; fees: number; amount: number }>()
+  for (const r of rows) {
+    const m = (r.settled_at ?? r.order_created_at ?? '').slice(0, 7) || 'Tanpa tanggal'
+    const x = byMonth.get(m) ?? { month: m, count: 0, revenue: 0, fees: 0, amount: 0 }
+    x.count++
+    x.revenue += r.revenue
+    x.fees += r.fees
+    x.amount += r.amount
+    byMonth.set(m, x)
+  }
+  // komponen
+  const comp = new Map<string, number>()
+  for (const r of rows) for (const [k, v] of Object.entries(JSON.parse(r.details || '{}') as Record<string, number>)) comp.set(k, (comp.get(k) ?? 0) + v)
+  // perkiraan vs aktual untuk pesanan yang ada di kedua data
+  const commission = num(settings.platform_commission_pct, 0.1) + num(settings.dynamic_commission_pct, 0.06)
+  const perOrder = num(settings.order_processing_fee, 1250)
+  const heavyFee = num(settings.heavy_parcel_fee, 10000)
+  const heavyKg = num(settings.heavy_parcel_threshold_kg, 0.3)
+  const heavyShare = num(settings.heavy_parcel_share_fallback, 0.082)
+  const orders = new Map<string, { store: string; order_id: string; date: string; omzet: number; net: number; weight: number | null }>()
+  for (const s of sales.results) {
+    const key = `${s.store}|${s.order_id}`
+    const net = Number(s.qty) - Number(s.return_qty) - Number(s.cancel_qty)
+    const o = orders.get(key) ?? { store: String(s.store), order_id: String(s.order_id), date: String(s.order_date), omzet: 0, net: 0, weight: null }
+    o.omzet += net * Number(s.unit_price)
+    o.net += net
+    if (s.weight_kg != null) o.weight = Math.max(o.weight ?? 0, Number(s.weight_kg))
+    orders.set(key, o)
+  }
+  const settledKeys = new Map<string, SettlementRow>()
+  for (const r of rows) if (isOrder(r.kind)) settledKeys.set(`${r.store}|${r.ref_id}`, r)
+  let matched = 0
+  let estFees = 0
+  let actFees = 0
+  let matchedOmzet = 0
+  for (const [k, o] of orders) {
+    const r = settledKeys.get(k)
+    if (!r || o.net <= 0) continue
+    matched++
+    matchedOmzet += o.omzet
+    actFees += r.fees
+    estFees += o.omzet * commission + perOrder + (o.weight == null ? heavyFee * heavyShare : o.weight > heavyKg ? heavyFee : 0)
+  }
+  // pesanan terjual yang belum ada di laporan (dalam periode laporan per toko)
+  const startOf = new Map<string, string>()
+  const endOf = new Map<string, string>()
+  for (const r of rows) {
+    const d = r.order_created_at ?? r.settled_at
+    if (!d) continue
+    if (!startOf.has(r.store) || d < startOf.get(r.store)!) startOf.set(r.store, d)
+    if (!endOf.has(r.store) || d > endOf.get(r.store)!) endOf.set(r.store, d)
+  }
+  const unsettled = [...orders.values()]
+    .filter((o) => o.net > 0 && startOf.has(o.store) && o.date >= startOf.get(o.store)! && o.date <= endOf.get(o.store)! && !settledKeys.has(`${o.store}|${o.order_id}`))
+    .sort((a, b) => b.date.localeCompare(a.date))
+  const orderRows = rows.filter((r) => isOrder(r.kind))
+  return c.json({
+    totals: {
+      lines: rows.length,
+      orders: orderRows.length,
+      revenue: sum((r) => r.revenue),
+      fees: sum((r) => r.fees),
+      amount: sum((r) => r.amount),
+      adjustments: sum((r) => r.amount, rows.filter((r) => !isOrder(r.kind))),
+      stores: [...new Set(rows.map((r) => r.store))],
+      from: [...rows.map((r) => r.settled_at ?? r.order_created_at).filter(Boolean)].sort()[0] ?? null,
+      to: [...rows.map((r) => r.settled_at ?? r.order_created_at).filter(Boolean)].sort().pop() ?? null,
+    },
+    byMonth: [...byMonth.values()].sort((a, b) => a.month.localeCompare(b.month)),
+    components: [...comp.entries()].map(([name, total]) => ({ name, total })).sort((a, b) => Math.abs(b.total) - Math.abs(a.total)),
+    comparison: { matched, matchedOmzet, estFees, actFees },
+    unsettled: { count: unsettled.length, omzet: unsettled.reduce((a, o) => a + o.omzet, 0), items: unsettled.slice(0, 50) },
+  })
+})
+
 // ---------- Proyeksi arus kas: angka dasar dari data ----------
 app.get('/projection/base', async (c) => {
   const b = await loadBundle(c.env.DB)
@@ -426,12 +547,24 @@ app.get('/projection/base', async (c) => {
   for (const x of b.sales) if (x.weight_kg != null) w.set(`${x.store}|${x.order_id}`, Math.max(w.get(`${x.store}|${x.order_id}`) ?? 0, x.weight_kg))
   const heavyShare = w.size ? [...w.values()].filter((v) => v > num(s.heavy_parcel_threshold_kg, 0.3)).length / w.size : num(s.heavy_parcel_share_fallback, 0.082)
   const lastFixed = [...months].reverse().find((r) => r.fixedCosts > 0)
+  // jika ada data settlement, pakai potongan efektif asli (persen dari omzet pesanan yang sudah cair)
+  const actualOrders = months.reduce((a, r) => a + r.actualFeeOrders, 0)
+  let actualFeePct: number | null = null
+  if (actualOrders >= 20) {
+    const settledKeys = new Set((b.settlements ?? []).filter((x) => /order|pesanan/i.test(x.kind)).map((x) => `${x.store}|${x.ref_id}`))
+    const feeSum = (b.settlements ?? []).filter((x) => /order|pesanan/i.test(x.kind)).reduce((a, x) => a + x.fees, 0)
+    const omzetSettled = b.sales
+      .filter((x) => settledKeys.has(`${x.store}|${x.order_id}`))
+      .reduce((a, x) => a + (x.qty - x.return_qty - x.cancel_qty) * x.unit_price, 0)
+    if (omzetSettled > 0) actualFeePct = feeSum / omzetSettled
+  }
   const boostMonths = months.filter((r) => r.omzetNet > 0)
   return c.json({
     avgPrice: d.kpi.avgPrice,
     landedCost: pcs ? hpp / pcs : num(s.fallback_landed_cost, 120000),
-    commissionPct: num(s.platform_commission_pct, 0.1) + num(s.dynamic_commission_pct, 0.06),
-    perOrderFee: num(s.order_processing_fee, 1250) + num(s.heavy_parcel_fee, 10000) * heavyShare,
+    commissionPct: actualFeePct ?? num(s.platform_commission_pct, 0.1) + num(s.dynamic_commission_pct, 0.06),
+    perOrderFee: actualFeePct != null ? 0 : num(s.order_processing_fee, 1250) + num(s.heavy_parcel_fee, 10000) * heavyShare,
+    feeSource: actualFeePct != null ? 'settlement' : 'tarif',
     teamCommissionPerPcs: pcs ? varExp / pcs : 0,
     pcsPerOrder: orders ? pcs / orders : 1,
     openingStock: d.kpi.stockUnits,
@@ -490,7 +623,7 @@ app.delete('/live/:id', async (c) => {
 })
 
 // ---------- Cadangan & impor data lengkap ----------
-const TABLES = ['settings', 'stores', 'products', 'variants', 'sku_map', 'sales', 'purchases', 'purchase_items', 'stock_adjustments', 'boosts', 'expenses', 'live_sessions'] as const
+const TABLES = ['settings', 'stores', 'products', 'variants', 'sku_map', 'sales', 'purchases', 'purchase_items', 'stock_adjustments', 'boosts', 'expenses', 'live_sessions', 'settlements'] as const
 
 app.get('/data/export', async (c) => {
   const out: Record<string, unknown[]> = {}

@@ -6,6 +6,7 @@ import { cx } from './ui'
 const NAV = [
   { to: '/', label: 'Ringkasan', icon: 'dashboard', end: true },
   { to: '/penjualan', label: 'Penjualan', icon: 'sales' },
+  { to: '/pencairan', label: 'Pencairan TikTok', icon: 'wallet' },
   { to: '/pembelian', label: 'Pembelian & Impor', icon: 'purchase' },
   { to: '/produk', label: 'Produk & Stok', icon: 'product' },
   { to: '/live', label: 'Sesi Live', icon: 'live' },

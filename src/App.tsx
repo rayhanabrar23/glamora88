@@ -11,6 +11,7 @@ import Products from './pages/Products'
 import Boosts from './pages/Boosts'
 import Live from './pages/Live'
 import Projection from './pages/Projection'
+import Settlement from './pages/Settlement'
 import Expenses from './pages/Expenses'
 import Settings from './pages/Settings'
 
@@ -43,6 +44,7 @@ export default function App() {
             <Routes>
               <Route path="/" element={<Dashboard />} />
               <Route path="/penjualan" element={<Sales />} />
+              <Route path="/pencairan" element={<Settlement />} />
               <Route path="/pembelian" element={<Purchases />} />
               <Route path="/produk" element={<Products />} />
               <Route path="/live" element={<Live />} />

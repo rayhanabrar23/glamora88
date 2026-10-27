@@ -208,6 +208,7 @@ function DataTools() {
     boosts: 'boost',
     expenses: 'biaya',
     live_sessions: 'sesi live',
+    settlements: 'baris settlement',
   }
   return (
     <Card title="Impor & cadangan data" subtitle="Simpan cadangan secara rutin, misalnya setiap akhir bulan">

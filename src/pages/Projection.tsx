@@ -21,6 +21,7 @@ interface Base {
   lastFixed: { month: string; amount: number } | null
   avgBoost: number
   saved: Scenario | null
+  feeSource?: 'settlement' | 'tarif'
 }
 
 const uid = () => Math.random().toString(36).slice(2, 9)
@@ -186,7 +187,7 @@ export default function Projection() {
             <Field label="HPP / landed cost (Rp/pcs)" hint={`Data: ${rp(base.landedCost)}`}>
               <Input type="number" value={s.landedCost} onChange={(e) => upd({ landedCost: Number(e.target.value) })} />
             </Field>
-            <Field label="Komisi TikTok (%)" hint="Platform + dinamis">
+            <Field label="Potongan TikTok (% omzet)" hint={base.feeSource === 'settlement' ? 'Dari laporan settlement (potongan asli)' : 'Komisi platform + dinamis (tarif)'}>
               <Input
                 type="number"
                 step="0.1"

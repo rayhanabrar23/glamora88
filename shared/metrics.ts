@@ -11,6 +11,8 @@ export interface DataBundle {
   adjustments: StockAdjustment[]
   boosts: Boost[]
   expenses: Expense[]
+  /** Potongan aktual dari laporan settlement TikTok (opsional). */
+  settlements?: { store: string; ref_id: string; kind: string; fees: number }[]
 }
 
 const n = (v: unknown, d = 0) => {
@@ -97,6 +99,8 @@ export interface MonthRow {
   returnsQty: number
   hpp: number
   platformFees: number
+  /** jumlah pesanan yang potongannya memakai angka asli settlement */
+  actualFeeOrders: number
   contribution: number
   boost: number
   fixedCosts: number
@@ -218,6 +222,7 @@ export function computeMonthly(b: DataBundle, from?: string, to?: string): Month
         returnsQty: 0,
         hpp: 0,
         platformFees: 0,
+        actualFeeOrders: 0,
         contribution: 0,
         boost: 0,
         fixedCosts: 0,
@@ -233,7 +238,13 @@ export function computeMonthly(b: DataBundle, from?: string, to?: string): Month
   )
 
   // Penjualan & biaya platform per pesanan
-  const orderAgg = new Map<string, { month: string; net: number; weight: number | null }>()
+  const actualFees = new Map<string, number>()
+  for (const st of b.settlements ?? []) {
+    if (!/order|pesanan/i.test(st.kind)) continue
+    const k = `${st.store}|${st.ref_id}`
+    actualFees.set(k, (actualFees.get(k) ?? 0) + st.fees)
+  }
+  const orderAgg = new Map<string, { month: string; net: number; weight: number | null; commission: number }>()
   for (const x of b.sales) {
     const r = rows.get(monthKey(x.order_date))
     if (!r) continue
@@ -245,18 +256,24 @@ export function computeMonthly(b: DataBundle, from?: string, to?: string): Month
     if (!isPack) r.pcsNet += net
     r.returnsQty += x.return_qty
     r.hpp += net * (x.sku ? costs.get(x.sku)?.landed ?? fallback : fallback)
-    r.platformFees += net * x.unit_price * commission
     const key = `${x.store}|${x.order_id}`
-    const o = orderAgg.get(key) ?? { month: r.month, net: 0, weight: null }
+    const o = orderAgg.get(key) ?? { month: r.month, net: 0, weight: null, commission: 0 }
+    o.commission += net * x.unit_price * commission
     o.net += isPack ? 0 : net
     if (x.weight_kg != null) o.weight = Math.max(o.weight ?? 0, x.weight_kg)
     orderAgg.set(key, o)
   }
-  for (const o of orderAgg.values()) {
-    if (o.net <= 0) continue
+  for (const [key, o] of orderAgg) {
     const r = rows.get(o.month)!
-    r.orders += 1
-    r.platformFees += procFee + (o.weight == null ? heavyFee * heavyShare : o.weight > heavyKg ? heavyFee : 0)
+    if (o.net > 0) r.orders += 1
+    const actual = actualFees.get(key)
+    if (actual != null) {
+      // potongan asli dari laporan settlement menggantikan perkiraan
+      r.platformFees += actual
+      r.actualFeeOrders += 1
+    } else if (o.net > 0) {
+      r.platformFees += o.commission + procFee + (o.weight == null ? heavyFee * heavyShare : o.weight > heavyKg ? heavyFee : 0)
+    }
   }
   for (const x of b.boosts) {
     const r = rows.get(monthKey(x.boost_date))
