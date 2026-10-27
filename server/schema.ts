@@ -105,6 +105,17 @@ export const SCHEMA: string[] = [
     classification TEXT NOT NULL DEFAULT 'Tetap',
     cash_only INTEGER NOT NULL DEFAULT 0
   )`,
+  `CREATE TABLE IF NOT EXISTS live_sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    start_at TEXT NOT NULL,
+    duration_min INTEGER NOT NULL,
+    store TEXT NOT NULL,
+    host TEXT,
+    title TEXT,
+    viewers INTEGER,
+    notes TEXT
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_live_start ON live_sessions(start_at)`,
 ]
 
 export const DEFAULT_SETTINGS: Record<string, string> = {
@@ -116,4 +127,5 @@ export const DEFAULT_SETTINGS: Record<string, string> = {
   heavy_parcel_share_fallback: '0.082',
   fallback_landed_cost: '120000',
   business_name: 'Glamora88',
+  live_attribution_buffer_min: '15',
 }

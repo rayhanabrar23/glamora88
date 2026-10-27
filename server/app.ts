@@ -3,6 +3,7 @@ import { checkPassword, clearSessionCookie, isAuthenticated, makeSessionCookie }
 import { ensureSchema, getSettings, num, runBatched, type Env } from './db'
 import { buildDashboard } from '../shared/dashboard'
 import { computeStock, type DataBundle } from '../shared/metrics'
+import { buildLiveReport } from '../shared/live'
 import type { ImportedSaleLine } from '../shared/types'
 
 const app = new Hono<{ Bindings: Env }>().basePath('/api')
@@ -409,8 +410,51 @@ app.delete('/expenses/:id', async (c) => {
   return c.json({ ok: true })
 })
 
+// ---------- Sesi live ----------
+app.get('/live', async (c) => {
+  const { from, to } = c.req.query()
+  const [sessions, sales, settings] = await Promise.all([
+    c.env.DB.prepare('SELECT * FROM live_sessions').all(),
+    c.env.DB.prepare('SELECT * FROM sales').all(),
+    getSettings(c.env.DB),
+  ])
+  return c.json(
+    buildLiveReport(sessions.results as never, sales.results as never, num(settings.live_attribution_buffer_min, 15), from || undefined, to || undefined),
+  )
+})
+const liveVals = (b: Record<string, unknown>) => [
+  b.start_at,
+  Math.max(1, Math.round(num(b.duration_min, 60))),
+  b.store,
+  str(b.host),
+  str(b.title),
+  b.viewers === '' || b.viewers == null ? null : Math.round(num(b.viewers)),
+  str(b.notes),
+]
+app.post('/live', async (c) => {
+  const body = await c.req.json<Record<string, unknown> | Record<string, unknown>[]>()
+  const rows = Array.isArray(body) ? body : [body]
+  await runBatched(
+    c.env.DB,
+    rows.map((b) =>
+      c.env.DB.prepare('INSERT INTO live_sessions (start_at, duration_min, store, host, title, viewers, notes) VALUES (?,?,?,?,?,?,?)').bind(...liveVals(b)),
+    ),
+  )
+  return c.json({ ok: true, added: rows.length })
+})
+app.put('/live/:id', async (c) => {
+  await c.env.DB.prepare('UPDATE live_sessions SET start_at=?, duration_min=?, store=?, host=?, title=?, viewers=?, notes=? WHERE id=?')
+    .bind(...liveVals(await c.req.json()), c.req.param('id'))
+    .run()
+  return c.json({ ok: true })
+})
+app.delete('/live/:id', async (c) => {
+  await c.env.DB.prepare('DELETE FROM live_sessions WHERE id = ?').bind(c.req.param('id')).run()
+  return c.json({ ok: true })
+})
+
 // ---------- Cadangan & impor data lengkap ----------
-const TABLES = ['settings', 'stores', 'products', 'variants', 'sku_map', 'sales', 'purchases', 'purchase_items', 'stock_adjustments', 'boosts', 'expenses'] as const
+const TABLES = ['settings', 'stores', 'products', 'variants', 'sku_map', 'sales', 'purchases', 'purchase_items', 'stock_adjustments', 'boosts', 'expenses', 'live_sessions'] as const
 
 app.get('/data/export', async (c) => {
   const out: Record<string, unknown[]> = {}

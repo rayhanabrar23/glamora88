@@ -13,6 +13,7 @@ const FIELDS: { key: string; label: string; hint: string; kind: 'pct' | 'rp' | '
   { key: 'heavy_parcel_fee', label: 'Fee pengiriman paket berat', hint: 'Rupiah per pesanan di atas batas berat', kind: 'rp' },
   { key: 'heavy_parcel_threshold_kg', label: 'Batas berat paket (kg)', hint: 'Default 0,3 kg', kind: 'num' },
   { key: 'heavy_parcel_share_fallback', label: 'Porsi paket berat (cadangan)', hint: 'Dipakai jika berat tidak ada di data (input manual)', kind: 'pct' },
+  { key: 'live_attribution_buffer_min', label: 'Toleransi penjualan setelah live (menit)', hint: 'Order yang masuk sampai sekian menit setelah live selesai tetap dihitung hasil live', kind: 'num' },
   { key: 'fallback_landed_cost', label: 'Landed cost cadangan', hint: 'Untuk SKU yang harga belinya belum dicatat', kind: 'rp' },
   { key: 'planned_fixed_cost', label: 'Rencana biaya tetap per bulan', hint: 'Untuk menghitung titik impas rencana (mis. setelah ruko dipakai). Kosongkan jika tidak ada', kind: 'rp' },
 ]
@@ -206,6 +207,7 @@ function DataTools() {
     stock_adjustments: 'penyesuaian stok',
     boosts: 'boost',
     expenses: 'biaya',
+    live_sessions: 'sesi live',
   }
   return (
     <Card title="Impor & cadangan data" subtitle="Simpan cadangan secara rutin, misalnya setiap akhir bulan">

@@ -8,6 +8,7 @@ const NAV = [
   { to: '/penjualan', label: 'Penjualan', icon: 'sales' },
   { to: '/pembelian', label: 'Pembelian & Impor', icon: 'purchase' },
   { to: '/produk', label: 'Produk & Stok', icon: 'product' },
+  { to: '/live', label: 'Sesi Live', icon: 'live' },
   { to: '/boost', label: 'Boost & Promosi', icon: 'boost' },
   { to: '/biaya', label: 'Biaya Operasional', icon: 'expense' },
   { to: '/pengaturan', label: 'Pengaturan', icon: 'settings' },

@@ -23,6 +23,7 @@ const P: Record<string, string> = {
   down: 'M23 18l-9.5-9.5-5 5L1 6M17 18h6v-6',
   menu: 'M3 12h18M3 6h18M3 18h18',
   chevron: 'M6 9l6 6 6-6',
+  live: 'M23 7l-7 5 7 5zM1 5h15v14H1z',
   stock: 'M3 3v18h18M7 16v-5M12 16V8M17 16v-9',
   lock: 'M5 11h14v10H5zM8 11V7a4 4 0 0 1 8 0v4',
 }
