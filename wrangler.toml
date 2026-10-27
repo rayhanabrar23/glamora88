@@ -1,0 +1,10 @@
+# Konfigurasi Cloudflare Pages untuk Portal Glamora88.
+# Ganti database_id dengan ID database D1 Anda (lihat README, langkah 2).
+name = "glamora88"
+compatibility_date = "2025-01-01"
+pages_build_output_dir = "dist"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "glamora88-db"
+database_id = "GANTI-DENGAN-ID-DATABASE-D1"

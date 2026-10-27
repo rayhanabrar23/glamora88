@@ -1,0 +1,47 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Playfair Display", Georgia, serif;
+
+  --color-canvas: #f7f5f1;
+  --color-surface: #ffffff;
+  --color-line: #e8e3da;
+  --color-line-soft: #f1ede6;
+  --color-ink: #1b2333;
+  --color-ink-2: #4a5263;
+  --color-muted: #7b8291;
+  --color-navy: #1f2a44;
+  --color-navy-2: #2f3c5c;
+  --color-gold: #b08d57;
+  --color-gold-soft: #f5ecdc;
+
+  /* palet grafik — tervalidasi (CVD aman, kontras ≥ 3:1) */
+  --color-s1: #2f5aa8;
+  --color-s2: #b97a1f;
+  --color-s3: #2e9a7a;
+  --color-s4: #7a5cc7;
+  --color-s5: #d1607f;
+
+  --color-good: #1e7d4f;
+  --color-good-soft: #e6f4ec;
+  --color-warn: #a86a00;
+  --color-warn-soft: #fbf1dc;
+  --color-bad: #b23a3a;
+  --color-bad-soft: #fbe9e7;
+  --color-info: #2f5aa8;
+  --color-info-soft: #e8eef9;
+}
+
+html, body, #root { height: 100%; }
+body {
+  margin: 0;
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: "tnum" 1, "cv11" 1;
+}
+.num { font-variant-numeric: tabular-nums; }
+::selection { background: var(--color-gold-soft); }
+input, select, textarea, button { font: inherit; }

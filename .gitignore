@@ -1,0 +1,10 @@
+node_modules
+dist
+.wrangler
+.dev.vars
+*.local
+# data bisnis jangan pernah di-commit
+data/
+*.xlsx
+*.csv
+seed*.json

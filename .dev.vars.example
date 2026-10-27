@@ -1,0 +1,2 @@
+APP_PASSWORD=ganti-kata-sandi
+SESSION_SECRET=ganti-dengan-teks-acak-panjang
