@@ -7,4 +7,4 @@ pages_build_output_dir = "dist"
 [[d1_databases]]
 binding = "DB"
 database_name = "glamora88-db"
-database_id = "GANTI-DENGAN-ID-DATABASE-D1"
+database_id = "b73ebf2c-240c-41fb-b067-f42040639a64"
