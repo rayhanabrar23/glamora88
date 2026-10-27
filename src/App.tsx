@@ -10,6 +10,7 @@ import Purchases from './pages/Purchases'
 import Products from './pages/Products'
 import Boosts from './pages/Boosts'
 import Live from './pages/Live'
+import Projection from './pages/Projection'
 import Expenses from './pages/Expenses'
 import Settings from './pages/Settings'
 
@@ -47,6 +48,7 @@ export default function App() {
               <Route path="/live" element={<Live />} />
               <Route path="/boost" element={<Boosts />} />
               <Route path="/biaya" element={<Expenses />} />
+              <Route path="/proyeksi" element={<Projection />} />
               <Route path="/pengaturan" element={<Settings />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>

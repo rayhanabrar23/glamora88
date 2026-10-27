@@ -11,6 +11,7 @@ const NAV = [
   { to: '/live', label: 'Sesi Live', icon: 'live' },
   { to: '/boost', label: 'Boost & Promosi', icon: 'boost' },
   { to: '/biaya', label: 'Biaya Operasional', icon: 'expense' },
+  { to: '/proyeksi', label: 'Proyeksi Kas', icon: 'up' },
   { to: '/pengaturan', label: 'Pengaturan', icon: 'settings' },
 ]
 

@@ -410,6 +410,42 @@ app.delete('/expenses/:id', async (c) => {
   return c.json({ ok: true })
 })
 
+// ---------- Proyeksi arus kas: angka dasar dari data ----------
+app.get('/projection/base', async (c) => {
+  const b = await loadBundle(c.env.DB)
+  const d = buildDashboard(b)
+  const s = b.settings
+  const months = d.monthly
+  const pcs = months.reduce((a, r) => a + r.pcsNet, 0)
+  const hpp = months.reduce((a, r) => a + r.hpp, 0)
+  const orders = months.reduce((a, r) => a + r.orders, 0)
+  const varExp = months.reduce((a, r) => a + r.variableExpenses, 0)
+  const activeMonths = months.filter((r) => r.pcsNet > 0)
+  // porsi pesanan paket berat dari data berat yang tersedia
+  const w = new Map<string, number>()
+  for (const x of b.sales) if (x.weight_kg != null) w.set(`${x.store}|${x.order_id}`, Math.max(w.get(`${x.store}|${x.order_id}`) ?? 0, x.weight_kg))
+  const heavyShare = w.size ? [...w.values()].filter((v) => v > num(s.heavy_parcel_threshold_kg, 0.3)).length / w.size : num(s.heavy_parcel_share_fallback, 0.082)
+  const lastFixed = [...months].reverse().find((r) => r.fixedCosts > 0)
+  const boostMonths = months.filter((r) => r.omzetNet > 0)
+  return c.json({
+    avgPrice: d.kpi.avgPrice,
+    landedCost: pcs ? hpp / pcs : num(s.fallback_landed_cost, 120000),
+    commissionPct: num(s.platform_commission_pct, 0.1) + num(s.dynamic_commission_pct, 0.06),
+    perOrderFee: num(s.order_processing_fee, 1250) + num(s.heavy_parcel_fee, 10000) * heavyShare,
+    teamCommissionPerPcs: pcs ? varExp / pcs : 0,
+    pcsPerOrder: orders ? pcs / orders : 1,
+    openingStock: d.kpi.stockUnits,
+    avgPcs: d.period.activeMonths ? pcs / d.period.activeMonths : 0,
+    avgPcsSelling: activeMonths.length ? pcs / activeMonths.length : 0,
+    bestPcs: Math.max(0, ...months.map((r) => r.pcsNet)),
+    plannedFixed: num(s.planned_fixed_cost, 0) || null,
+    lastFixed: lastFixed ? { month: lastFixed.month, amount: lastFixed.fixedCosts } : null,
+    avgBoost: boostMonths.length ? boostMonths.reduce((a, r) => a + r.boost, 0) / boostMonths.length : 0,
+    contributionPct: d.kpi.contributionPct,
+    saved: s.projection ? JSON.parse(s.projection) : null,
+  })
+})
+
 // ---------- Sesi live ----------
 app.get('/live', async (c) => {
   const { from, to } = c.req.query()
