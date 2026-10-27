@@ -13,6 +13,7 @@ const NAV = [
   { to: '/boost', label: 'Boost & Promosi', icon: 'boost' },
   { to: '/biaya', label: 'Biaya Operasional', icon: 'expense' },
   { to: '/proyeksi', label: 'Proyeksi Kas', icon: 'up' },
+  { to: '/laporan', label: 'Unduh Laporan', icon: 'download' },
   { to: '/pengaturan', label: 'Pengaturan', icon: 'settings' },
 ]
 
