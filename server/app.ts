@@ -1,10 +1,9 @@
 import { Hono } from 'hono'
-import { handle } from 'hono/cloudflare-pages'
-import { checkPassword, clearSessionCookie, isAuthenticated, makeSessionCookie } from '../../server/auth'
-import { ensureSchema, getSettings, num, runBatched, type Env } from '../../server/db'
-import { buildDashboard } from '../../shared/dashboard'
-import { computeStock, type DataBundle } from '../../shared/metrics'
-import type { ImportedSaleLine } from '../../shared/types'
+import { checkPassword, clearSessionCookie, isAuthenticated, makeSessionCookie } from './auth'
+import { ensureSchema, getSettings, num, runBatched, type Env } from './db'
+import { buildDashboard } from '../shared/dashboard'
+import { computeStock, type DataBundle } from '../shared/metrics'
+import type { ImportedSaleLine } from '../shared/types'
 
 const app = new Hono<{ Bindings: Env }>().basePath('/api')
 
@@ -441,4 +440,4 @@ app.post('/data/import', async (c) => {
   return c.json({ ok: true, counts })
 })
 
-export const onRequest = handle(app)
+export default app

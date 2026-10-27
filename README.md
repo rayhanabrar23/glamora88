@@ -3,7 +3,7 @@
 Portal internal untuk mencatat aktivitas harian Glamora88 (penjualan, pembelian/impor, stok, boost, biaya)
 dan menampilkan kinerjanya: omzet, laba-rugi, titik impas, arus kas, dan stok.
 
-Dibangun dengan React + Vite (tampilan), Cloudflare Pages Functions + Hono (API), dan Cloudflare D1 (database).
+Dibangun dengan React + Vite (tampilan), Cloudflare Workers + Hono (API), dan Cloudflare D1 (database).
 
 > **Penting:** repo ini publik. **Jangan pernah** meng-commit data bisnis (file export TikTok, file .json data awal,
 > cadangan). Semua data tersimpan di database D1 akun Cloudflare Anda, bukan di repo.
@@ -38,34 +38,31 @@ Unggah file yang sama berkali-kali aman: data lama **diperbarui**, tidak dobel.
 
 ## Cara deploy ke Cloudflare (sekali saja)
 
+Portal berjalan sebagai **Cloudflare Worker** (tampilan + API dalam satu proyek).
+
 ### 1. Buat database D1
-1. Buka **Cloudflare Dashboard → Storage & Databases → D1 SQL Database → Create**.
-2. Nama: `glamora88-db` → **Create**.
-3. Salin **Database ID** yang muncul.
-4. Di repo ini, buka `wrangler.toml`, ganti `GANTI-DENGAN-ID-DATABASE-D1` dengan ID tersebut, lalu commit.
+1. **Cloudflare Dashboard → Storage & Databases → D1 SQL Database → Create**, nama: `glamora88-db`.
+2. Salin **Database ID**, tempel ke `database_id` di `wrangler.toml`, lalu commit.
 
-Tabel dibuat otomatis saat portal pertama kali dibuka. Tidak perlu menjalankan SQL apa pun.
+Tabel dibuat otomatis saat portal pertama kali dibuka.
 
-### 2. Buat proyek Pages
-1. **Workers & Pages → Create → Pages → Connect to Git** → pilih repo `glamora88`.
+### 2. Hubungkan repo (Workers Builds)
+1. **Workers & Pages → Create → Import a repository** → pilih repo `glamora88`.
 2. Pengaturan build:
-   - Framework preset: **None** (atau Vite)
    - Build command: `npm run build`
-   - Build output directory: `dist`
-3. **Save and Deploy**.
+   - Deploy command: `npx wrangler deploy`
+3. **Deploy**. Setiap push ke `main` akan ter-deploy otomatis.
 
 ### 3. Atur kata sandi
-Di proyek Pages: **Settings → Variables and Secrets → Add** (untuk *Production*):
+Di Worker `glamora88`: **Settings → Variables and Secrets → Add**:
 
 | Nama | Tipe | Isi |
 |---|---|---|
 | `APP_PASSWORD` | Secret | Kata sandi bersama tim untuk masuk portal |
 | `SESSION_SECRET` | Secret | Teks acak panjang (mis. 40 karakter), untuk mengamankan sesi login |
 
-Lalu **Deployments → Retry deployment** agar variabel terbaca.
-
 ### 4. Muat data awal
-1. Buka alamat portal (mis. `https://glamora88.pages.dev`) dan masuk dengan `APP_PASSWORD`.
+1. Buka alamat portal (mis. `https://glamora88.<akun>.workers.dev`) dan masuk dengan `APP_PASSWORD`.
 2. **Pengaturan → Impor & cadangan data → Pilih file .json** → pilih file data awal yang dikirim terpisah.
 3. Cek menu **Ringkasan**.
 
@@ -92,17 +89,18 @@ Gratis untuk maksimal 50 pengguna. Dengan ini, halaman portal bahkan tidak bisa 
 npm install
 cp .dev.vars.example .dev.vars        # isi APP_PASSWORD & SESSION_SECRET
 npm run build
-npx wrangler pages dev dist           # http://localhost:8788 (D1 lokal otomatis)
+npx wrangler dev --port 8788          # http://localhost:8788 (D1 lokal otomatis)
 ```
 
-Untuk mengubah tampilan dengan hot-reload, jalankan `npx wrangler pages dev dist` di satu terminal dan `npm run dev`
+Untuk mengubah tampilan dengan hot-reload, jalankan `npx wrangler dev --port 8788` di satu terminal dan `npm run dev`
 di terminal lain (permintaan `/api` diteruskan ke port 8788).
 
 ### Struktur
 
 ```
-functions/api/[[route]].ts   API (Hono) — semua endpoint /api/*
-server/                      skema D1, autentikasi, helper database
-shared/                      logika bisnis: parser export TikTok, perhitungan laba, stok, titik impas
-src/                         tampilan (React): pages/, components/, lib/
+worker/index.ts   titik masuk Worker: /api/* → API, selain itu → tampilan (dist/)
+server/app.ts     API (Hono) — semua endpoint /api/*
+server/           skema D1, autentikasi, helper database
+shared/           logika bisnis: parser export TikTok, perhitungan laba, stok, titik impas
+src/              tampilan (React): pages/, components/, lib/
 ```

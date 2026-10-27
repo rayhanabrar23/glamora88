@@ -16,7 +16,7 @@ export default defineConfig({
     },
   },
   server: {
-    // saat `npm run dev`, API diteruskan ke `wrangler pages dev` (port 8788)
+    // saat `npm run dev`, API diteruskan ke `wrangler dev` (port 8788)
     proxy: { '/api': 'http://localhost:8788' },
   },
 })

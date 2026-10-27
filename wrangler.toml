@@ -1,8 +1,13 @@
-# Konfigurasi Cloudflare Pages untuk Portal Glamora88.
-# Ganti database_id dengan ID database D1 Anda (lihat README, langkah 2).
+# Konfigurasi Cloudflare Workers untuk Portal Glamora88.
 name = "glamora88"
+main = "worker/index.ts"
 compatibility_date = "2025-01-01"
-pages_build_output_dir = "dist"
+
+[assets]
+directory = "./dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+run_worker_first = ["/api/*"]
 
 [[d1_databases]]
 binding = "DB"
