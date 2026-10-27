@@ -112,7 +112,6 @@ export async function reportSummary(c: ReportCtx): Promise<SheetSpec[]> {
             { header: 'Margin operasional', value: (r) => (r.omzetNet ? r.operatingProfit / r.omzetNet : null), kind: 'pct' },
           ],
           rows: d.monthly,
-          note: 'Laba operasional belum termasuk gaji/prive owner dan pajak. Potongan TikTok memakai angka asli untuk pesanan yang sudah ada di laporan settlement, selain itu perkiraan tarif.',
         },
         {
           heading: 'Arus kas',
@@ -175,7 +174,7 @@ export async function reportSales(c: ReportCtx): Promise<SheetSpec[]> {
     {
       name: 'Detail Penjualan',
       title: 'Detail Penjualan per Pesanan',
-      meta: metaOf(c, fb, `${sales.length} baris`),
+      meta: metaOf(c, fb),
       blocks: [
         {
           columns: [
@@ -194,7 +193,7 @@ export async function reportSales(c: ReportCtx): Promise<SheetSpec[]> {
             { header: 'Sumber', value: (s: Sale) => (s.source === 'manual' ? 'Manual' : 'Export TikTok') },
           ],
           rows: [...sales].sort((a, b) => a.order_date.localeCompare(b.order_date)),
-          note: sales.length >= 2000 ? 'Dibatasi 2.000 baris; persempit periode untuk detail lengkap.' : undefined,
+          note: sales.length >= 2000 ? 'Maksimal 2.000 baris.' : undefined,
         },
       ],
     },
@@ -209,7 +208,7 @@ export async function reportStock(c: ReportCtx): Promise<SheetSpec[]> {
     {
       name: 'Stok per SKU',
       title: 'Posisi Stok per SKU',
-      meta: metaOf({ ...c, from: '', to: '' }, undefined, 'posisi saat ini'),
+      meta: metaOf({ ...c, from: '', to: '' }),
       blocks: [
         {
           columns: [
@@ -228,7 +227,6 @@ export async function reportStock(c: ReportCtx): Promise<SheetSpec[]> {
             { header: 'Terakhir laku', value: (r: StockRow) => r.lastSale?.slice(0, 10) ?? 'Belum pernah', kind: 'date' },
           ],
           rows,
-          note: 'Sisa stok = dibeli (batch berstatus Tiba) − terjual neto + penyesuaian stock opname. Nilai stok memakai landed cost rata-rata.',
         },
       ],
     },
@@ -328,7 +326,6 @@ export async function reportBoosts(c: ReportCtx): Promise<SheetSpec[]> {
             { header: 'Video views', value: (b: Boost) => b.views, kind: 'int', total: 'sum' },
           ],
           rows,
-          note: 'Uang keluar = budget − kupon + Apple service fee.',
         },
       ],
     },
@@ -348,7 +345,7 @@ export async function reportExpenses(c: ReportCtx): Promise<SheetSpec[]> {
     {
       name: 'Biaya Operasional',
       title: 'Biaya Operasional',
-      meta: metaOf(c, undefined, 'tidak termasuk boost'),
+      meta: metaOf(c),
       blocks: [
         {
           heading: 'Rekap per bulan menurut klasifikasi',
@@ -416,7 +413,6 @@ export async function reportLive(c: ReportCtx): Promise<SheetSpec[]> {
             { header: 'Omzet per jam', value: (s: (typeof sessions)[number]) => s.omzetPerHour, kind: 'rp' },
           ],
           rows: sessions,
-          note: 'Penjualan sesi = pesanan toko tersebut yang masuk selama live berlangsung (plus toleransi di Pengaturan).',
         },
       ],
     },
@@ -436,7 +432,7 @@ export async function reportSettlement(c: ReportCtx): Promise<SheetSpec[]> {
     {
       name: 'Pencairan TikTok',
       title: 'Pencairan TikTok (Settlement)',
-      meta: metaOf({ ...c, from: '', to: '' }, undefined, 'semua laporan yang diunggah'),
+      meta: metaOf({ ...c, from: '', to: '' }),
       blocks: [
         {
           heading: 'Per bulan pencairan',
@@ -474,12 +470,12 @@ export async function reportSettlement(c: ReportCtx): Promise<SheetSpec[]> {
 }
 
 export const REPORTS = [
-  { id: 'summary', title: 'Ringkasan & Laba-Rugi', desc: 'Indikator utama, titik impas, catatan otomatis, laba-rugi dan arus kas per bulan.', sheets: ['Ringkasan', 'Laba-Rugi Bulanan'], run: reportSummary },
-  { id: 'sales', title: 'Penjualan', desc: 'Per model, per bulan per toko, dan detail setiap baris pesanan.', sheets: ['Penjualan per Model', 'Detail Penjualan'], run: reportSales },
-  { id: 'stock', title: 'Stok per SKU', desc: 'Dibeli, terjual, sisa, nilai stok, dan kapan terakhir laku (posisi saat ini).', sheets: ['Stok per SKU'], run: reportStock },
-  { id: 'purchases', title: 'Pembelian & Impor', desc: 'Biaya per batch dan isi batch per SKU beserta landed cost.', sheets: ['Pembelian'], run: reportPurchases },
-  { id: 'boosts', title: 'Boost & Promosi', desc: 'Setiap promosi: budget, kupon, Apple fee, uang keluar, dan hasil.', sheets: ['Boost'], run: reportBoosts },
-  { id: 'expenses', title: 'Biaya Operasional', desc: 'Rekap per bulan menurut klasifikasi dan rincian setiap biaya.', sheets: ['Biaya Operasional'], run: reportExpenses },
-  { id: 'live', title: 'Sesi Live', desc: 'Kinerja per host dan daftar sesi dengan penjualannya.', sheets: ['Sesi Live'], run: reportLive },
-  { id: 'settlement', title: 'Pencairan TikTok', desc: 'Dana cair, potongan per komponen, dan pesanan yang belum cair.', sheets: ['Pencairan TikTok'], run: reportSettlement },
+  { id: 'summary', title: 'Ringkasan & Laba-Rugi', sheets: ['Ringkasan', 'Laba-Rugi Bulanan'], run: reportSummary },
+  { id: 'sales', title: 'Penjualan', sheets: ['Penjualan per Model', 'Detail Penjualan'], run: reportSales },
+  { id: 'stock', title: 'Stok per SKU', sheets: ['Stok per SKU'], run: reportStock },
+  { id: 'purchases', title: 'Pembelian & Impor', sheets: ['Pembelian'], run: reportPurchases },
+  { id: 'boosts', title: 'Boost & Promosi', sheets: ['Boost'], run: reportBoosts },
+  { id: 'expenses', title: 'Biaya Operasional', sheets: ['Biaya Operasional'], run: reportExpenses },
+  { id: 'live', title: 'Sesi Live', sheets: ['Sesi Live'], run: reportLive },
+  { id: 'settlement', title: 'Pencairan TikTok', sheets: ['Pencairan TikTok'], run: reportSettlement },
 ] as const

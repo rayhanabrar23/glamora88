@@ -48,7 +48,6 @@ export default function Sales() {
     <>
       <PageHeader
         title="Penjualan"
-        subtitle="Unggah file export order TikTok Shop setiap hari, atau catat penjualan secara manual."
         actions={
           <>
             <Tabs
@@ -133,7 +132,7 @@ function SalesList({ onEdit, refs }: { onEdit: (s: Sale) => void; refs: ReturnTy
           <Loading />
         ) : !rows.length ? (
           <div className="p-5">
-            <Empty title="Belum ada penjualan pada filter ini">Unggah export TikTok atau tambahkan penjualan manual.</Empty>
+            <Empty title="Belum ada penjualan" />
           </div>
         ) : (
           <>
@@ -248,26 +247,21 @@ function Upload({ stores, onDone }: { stores: string[]; onDone: () => void }) {
 
   return (
     <div className="grid gap-4 lg:grid-cols-[1fr_1.1fr]">
-      <Card title="1. Pilih toko & file" subtitle="Seller Center → Pesanan → Ekspor (Order SKU List). Format .xlsx atau .csv.">
+      <Card title="Pilih toko & file">
         <div className="flex flex-col gap-4">
           <Field label="Toko asal file">
             <Select value={store} onChange={(e) => setStore(e.target.value)} options={[{ value: '', label: 'Pilih toko…' }, ...stores]} />
           </Field>
           <label className="flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-line bg-canvas/50 px-6 py-10 text-center transition-colors hover:border-gold">
             <input type="file" accept=".xlsx,.csv" className="hidden" onChange={(e) => e.target.files?.[0] && read(e.target.files[0])} />
-            <span className="text-[15px] font-medium text-navy">{file ? file.name : 'Klik untuk memilih file'}</span>
-            <span className="mt-1 text-[13px] text-muted">Data yang sudah ada akan diperbarui, bukan diduplikasi.</span>
+            <span className="text-[15px] font-medium text-navy">{file ? file.name : 'Pilih file .xlsx / .csv'}</span>
           </label>
           {err && <Callout tone="critical" title="File tidak bisa dibaca">{err}</Callout>}
-          <Callout tone="info" title="Cara status dibaca otomatis">
-            Retur dihitung hanya jika ada qty retur. Retur yang tidak jadi dan permintaan cancel yang ditolak penjual (barang sampai &amp; dibayar) tetap
-            dihitung terjual.
-          </Callout>
         </div>
       </Card>
-      <Card title="2. Periksa & simpan">
+      <Card title="Periksa & simpan">
         {!parsed || !summary ? (
-          <Empty title="Belum ada file">Ringkasan isi file akan muncul di sini sebelum disimpan.</Empty>
+          <Empty title="Belum ada file" />
         ) : (
           <div className="flex flex-col gap-4">
             <div className="grid grid-cols-2 gap-3">

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { downloadWorkbook, type SheetSpec } from '../lib/excel'
 import { REPORTS, type ReportCtx } from '../lib/reports'
 import { useRefs } from '../lib/refs'
-import { Button, Callout, Card, Field, Input, PageHeader, Select, useToast } from '../components/ui'
+import { Button, Card, Field, Input, PageHeader, Select, useToast } from '../components/ui'
 import { Icon } from '../components/Icon'
 
 const fileSafe = (s: string) => s.replace(/[\\/:*?"<>|]/g, '-')
@@ -45,8 +45,8 @@ export default function Reports() {
   }
   return (
     <>
-      <PageHeader title="Unduh Laporan" subtitle="Laporan Excel yang sudah rapi: judul, header berwarna, format Rupiah, dan total. Siap dikirim atau dicetak." />
-      <Card title="Filter laporan" subtitle="Kosongkan untuk semua periode / semua toko. Laporan stok selalu memakai posisi saat ini.">
+      <PageHeader title="Unduh Laporan" />
+      <Card title="Filter laporan">
         <div className="flex flex-wrap items-end gap-3">
           <Field label="Dari bulan">
             <Input type="month" className="w-[170px]" value={ctx.from} onChange={(e) => setCtx({ ...ctx, from: e.target.value })} />
@@ -67,7 +67,6 @@ export default function Reports() {
           </div>
           <div>
             <div className="text-[16px] font-semibold text-ink">Laporan Lengkap</div>
-            <p className="mt-0.5 text-[14px] text-ink-2">Semua laporan di bawah dalam satu file Excel, satu sheet per laporan. Cocok untuk dikirim ke owner atau calon investor.</p>
           </div>
         </div>
         <Button variant="primary" icon="download" className="h-10 shrink-0" onClick={() => run('all')} disabled={!!busy}>
@@ -79,8 +78,7 @@ export default function Reports() {
         {REPORTS.map((r) => (
           <div key={r.id} className="flex flex-col rounded-2xl border border-line bg-surface p-5 shadow-[0_1px_2px_rgba(27,35,51,0.04)]">
             <div className="text-[15px] font-semibold text-ink">{r.title}</div>
-            <p className="mt-1 flex-1 text-[13.5px] leading-relaxed text-muted">{r.desc}</p>
-            <div className="mt-3 flex flex-wrap gap-1.5">
+            <div className="mt-3 flex flex-1 flex-wrap content-start gap-1.5">
               {r.sheets.map((s) => (
                 <span key={s} className="rounded-md bg-line-soft px-2 py-0.5 text-[11.5px] text-ink-2">
                   {s}
@@ -92,11 +90,6 @@ export default function Reports() {
             </Button>
           </div>
         ))}
-      </div>
-      <div className="mt-4">
-        <Callout tone="info" title="Isi laporan rahasia">
-          File berisi data bisnis lengkap. Simpan di tempat aman dan bagikan hanya ke pihak yang berkepentingan.
-        </Callout>
       </div>
     </>
   )

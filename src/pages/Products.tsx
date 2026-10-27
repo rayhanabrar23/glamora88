@@ -75,7 +75,6 @@ export default function Products() {
     <>
       <PageHeader
         title="Produk & Stok"
-        subtitle="Stok dihitung otomatis: batch yang sudah tiba − terjual (neto) ± penyesuaian stock opname."
         actions={
           <>
             <Button icon="stock" onClick={() => setOpname(true)}>
@@ -96,7 +95,7 @@ export default function Products() {
       {negatives.length > 0 && (
         <div className="mb-4">
           <Callout tone="warning" title={`${negatives.length} SKU stoknya minus`}>
-            Penjualan lebih banyak dari pembelian yang tercatat: {negatives.map((r) => r.sku).join(', ')}. Catat pembeliannya di menu Pembelian atau lakukan stock opname.
+            {negatives.map((r) => r.sku).join(', ')}
           </Callout>
         </div>
       )}
@@ -358,7 +357,6 @@ function OpnameForm({ rows, label, onClose, onSaved }: { rows: StockRow[]; label
         <Field label="Tanggal hitung">
           <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
         </Field>
-        <p className="max-w-md text-[13.5px] text-muted">Isi jumlah fisik hasil hitung. Kosongkan SKU yang tidak dihitung. Selisih dicatat sebagai penyesuaian stok.</p>
       </div>
       <div className="max-h-[55vh] overflow-y-auto rounded-xl border border-line">
         <Table

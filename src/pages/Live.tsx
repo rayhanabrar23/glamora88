@@ -8,7 +8,6 @@ import { ModelBars } from '../components/charts'
 import {
   Badge,
   Button,
-  Callout,
   Card,
   confirmDelete,
   Empty,
@@ -54,7 +53,6 @@ export default function Live() {
     <>
       <PageHeader
         title="Sesi Live"
-        subtitle="Catat setiap sesi live. Penjualan yang masuk selama sesi (hingga 15 menit setelahnya) otomatis dihitung sebagai hasil sesi tersebut."
         actions={
           <>
             <label className="text-[12px] text-muted">
@@ -89,7 +87,7 @@ export default function Live() {
       {data.sessions.length > 0 && (
         <>
           <div className="mt-4">
-            <Card title="Kinerja per host" subtitle="Diurutkan dari omzet per jam tertinggi" padded={false}>
+            <Card title="Kinerja per host" padded={false}>
               <Table
                 head={
                   <tr>
@@ -120,7 +118,7 @@ export default function Live() {
             </Card>
           </div>
           <div className="mt-4 grid gap-4 lg:grid-cols-2">
-            <Card title="Hari terbaik untuk live" subtitle="Omzet per jam live, menurut hari">
+            <Card title="Hari terbaik untuk live">
               <ModelBars
                 data={data.byWeekday.map((b) => ({
                   label: b.label,
@@ -129,7 +127,7 @@ export default function Live() {
                 }))}
               />
             </Card>
-            <Card title="Waktu terbaik untuk live" subtitle="Omzet per jam live, menurut jam mulai">
+            <Card title="Waktu terbaik untuk live">
               <ModelBars
                 data={data.byHour.map((b) => ({
                   label: b.label,
@@ -146,7 +144,7 @@ export default function Live() {
         <Card title="Daftar sesi" padded={false}>
           {!data.sessions.length ? (
             <div className="p-5">
-              <Empty title="Belum ada sesi live tercatat">Catat sesi baru, atau tambahkan usulan sesi dari pola order di atas.</Empty>
+              <Empty title="Belum ada sesi live" />
             </div>
           ) : (
             <Table
@@ -215,15 +213,11 @@ function Suggestions({ items, hosts, onAdded }: { items: SuggestedSession[]; hos
   return (
     <Card
       title={`${items.length} kemungkinan sesi live belum tercatat`}
-      subtitle={`Terdeteksi dari order yang berdekatan (≥3 pesanan, jeda ≤45 menit) · total ${rp(total, { compact: true })}`}
+      subtitle={`Total ${rp(total, { compact: true })}`}
       actions={<Button onClick={() => setOpen(!open)}>{open ? 'Tutup' : 'Lihat & tambahkan'}</Button>}
-      padded={open ? false : true}
+      padded={false}
     >
-      {!open ? (
-        <Callout tone="info" title="Isi riwayat live dengan cepat">
-          Pilih sesi yang memang live, isi nama host-nya, lalu tambahkan. Jam mulai & durasi bisa disesuaikan setelahnya.
-        </Callout>
-      ) : (
+      {!open ? null : (
         <>
           <div className="flex flex-wrap items-end gap-3 border-b border-line-soft px-5 py-4">
             <Field label="Host untuk sesi terpilih">

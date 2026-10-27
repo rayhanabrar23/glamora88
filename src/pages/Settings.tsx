@@ -3,7 +3,7 @@ import { api } from '../lib/api'
 import { int } from '../lib/format'
 import { useRefs } from '../lib/refs'
 import { useData } from '../lib/useData'
-import { Button, Callout, Card, confirmDelete, Empty, Field, IconButton, Input, PageHeader, Select, Table, td, tdNum, th, useToast } from '../components/ui'
+import { Button, Callout, Card, confirmDelete, Field, IconButton, Input, PageHeader, Select, Table, td, tdNum, th, useToast } from '../components/ui'
 import type { Store } from '../../shared/types'
 
 const FIELDS: { key: string; label: string; hint: string; kind: 'pct' | 'rp' | 'num' }[] = [
@@ -12,17 +12,17 @@ const FIELDS: { key: string; label: string; hint: string; kind: 'pct' | 'rp' | '
   { key: 'order_processing_fee', label: 'Biaya pemrosesan per pesanan', hint: 'Rupiah per pesanan', kind: 'rp' },
   { key: 'heavy_parcel_fee', label: 'Fee pengiriman paket berat', hint: 'Rupiah per pesanan di atas batas berat', kind: 'rp' },
   { key: 'heavy_parcel_threshold_kg', label: 'Batas berat paket (kg)', hint: 'Default 0,3 kg', kind: 'num' },
-  { key: 'heavy_parcel_share_fallback', label: 'Porsi paket berat (cadangan)', hint: 'Dipakai jika berat tidak ada di data (input manual)', kind: 'pct' },
-  { key: 'live_attribution_buffer_min', label: 'Toleransi penjualan setelah live (menit)', hint: 'Order yang masuk sampai sekian menit setelah live selesai tetap dihitung hasil live', kind: 'num' },
-  { key: 'fallback_landed_cost', label: 'Landed cost cadangan', hint: 'Untuk SKU yang harga belinya belum dicatat', kind: 'rp' },
-  { key: 'planned_fixed_cost', label: 'Rencana biaya tetap per bulan', hint: 'Untuk menghitung titik impas rencana (mis. setelah ruko dipakai). Kosongkan jika tidak ada', kind: 'rp' },
+  { key: 'heavy_parcel_share_fallback', label: 'Porsi paket berat (cadangan)', hint: 'Jika data berat kosong', kind: 'pct' },
+  { key: 'live_attribution_buffer_min', label: 'Toleransi penjualan setelah live (menit)', hint: 'Menit setelah live selesai', kind: 'num' },
+  { key: 'fallback_landed_cost', label: 'Landed cost cadangan', hint: 'SKU tanpa harga beli', kind: 'rp' },
+  { key: 'planned_fixed_cost', label: 'Rencana biaya tetap per bulan', hint: 'Untuk titik impas rencana', kind: 'rp' },
 ]
 
 export default function Settings() {
   const refs = useRefs()
   return (
     <>
-      <PageHeader title="Pengaturan" subtitle="Toko, tarif potongan TikTok, pemetaan SKU, serta impor & cadangan data." />
+      <PageHeader title="Pengaturan" />
       <div className="grid gap-4 lg:grid-cols-2">
         <Rates settings={refs.settings} onSaved={refs.reload} />
         <Stores onChange={refs.reload} />
@@ -52,7 +52,7 @@ function Rates({ settings, onSaved }: { settings: Record<string, string>; onSave
     onSaved()
   }
   return (
-    <Card title="Tarif & asumsi perhitungan" subtitle="Ubah bila TikTok mengubah tarifnya" actions={<Button variant="primary" onClick={save}>Simpan</Button>}>
+    <Card title="Tarif & asumsi perhitungan" actions={<Button variant="primary" onClick={save}>Simpan</Button>}>
       <div className="grid gap-4 sm:grid-cols-2">
         {FIELDS.map((f) => (
           <Field key={f.key} label={`${f.label}${f.kind === 'pct' ? ' (%)' : f.kind === 'rp' ? ' (Rp)' : ''}`} hint={f.hint}>
@@ -87,7 +87,7 @@ function Stores({ onChange }: { onChange: () => void }) {
     onChange()
   }
   return (
-    <Card title="Toko & kanal penjualan" subtitle="Dipakai saat unggah export dan input manual">
+    <Card title="Toko & kanal penjualan">
       <div className="flex flex-col gap-2">
         {(data?.stores ?? []).map((s) => (
           <div key={s.id} className="flex items-center justify-between rounded-xl border border-line-soft px-4 py-2.5">
@@ -129,7 +129,7 @@ function SkuMapping({ skuOptions }: { skuOptions: { value: string; label: string
   return (
     <Card
       title="Pemetaan SKU TikTok"
-      subtitle={`Hubungkan produk di file export TikTok dengan SKU internal. ${int(data?.map.length ?? 0)} SKU TikTok sudah terpetakan.`}
+      subtitle={`${int(data?.map.length ?? 0)} SKU terpetakan`}
       padded={false}
     >
       {!data?.unmapped.length ? (
@@ -211,18 +211,16 @@ function DataTools() {
     settlements: 'baris settlement',
   }
   return (
-    <Card title="Impor & cadangan data" subtitle="Simpan cadangan secara rutin, misalnya setiap akhir bulan">
+    <Card title="Impor & cadangan data">
       <div className="grid gap-4 md:grid-cols-2">
         <div className="rounded-xl border border-line-soft p-4">
           <div className="font-medium text-ink">Unduh cadangan</div>
-          <p className="mt-1 text-[13.5px] text-muted">Semua data dalam satu file .json. Simpan di tempat aman, jangan diunggah ke repo publik.</p>
           <a href="/api/data/export" className="mt-3 inline-block">
             <Button icon="download">Unduh cadangan</Button>
           </a>
         </div>
         <div className="rounded-xl border border-line-soft p-4">
           <div className="font-medium text-ink">Impor data</div>
-          <p className="mt-1 text-[13.5px] text-muted">Untuk memuat data awal atau memulihkan cadangan. Data di tabel yang sama akan diganti.</p>
           <label className="mt-3 inline-block">
             <input type="file" accept=".json" className="hidden" onChange={(e) => e.target.files?.[0] && importFile(e.target.files[0])} disabled={busy} />
             <span className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-xl border border-navy bg-navy px-3.5 text-[14px] font-medium text-white hover:bg-navy-2">
@@ -240,7 +238,6 @@ function DataTools() {
           </Callout>
         </div>
       )}
-      {!result && <Empty title="Tips">Setelah impor data awal, cek menu Ringkasan dan cocokkan angkanya dengan rekap Excel.</Empty>}
     </Card>
   )
 }

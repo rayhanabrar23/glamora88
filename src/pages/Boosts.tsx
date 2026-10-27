@@ -55,7 +55,6 @@ export default function Boosts() {
     <>
       <PageHeader
         title="Boost & Promosi"
-        subtitle="Catat setiap promosi TikTok (LIVE atau video) beserta hasilnya, supaya terlihat promosi mana yang benar-benar mendatangkan pembeli."
         actions={
           <Button variant="primary" icon="plus" onClick={() => setForm({ boost_date: `${today()} 19:00:00`, kind: 'LIVE', store: refs.stores[0], budget: 0, coupon: 0, apple_fee: 0 })}>
             Catat boost
@@ -70,9 +69,7 @@ export default function Boosts() {
       </div>
       {s.apple > 0 && s.total > 0 && s.apple / s.total > 0.15 && (
         <div className="mb-4">
-          <Callout tone="warning" title="Apple service fee menggerus anggaran promosi">
-            Koin promosi yang dibeli lewat aplikasi di iPhone dikenai biaya ±59% dari budget. Coba isi saldo lewat browser (TikTok Ads/Promote web) atau HP Android.
-          </Callout>
+          <Callout tone="warning" title={`${pct(s.apple / s.total, 0)} biaya boost untuk Apple service fee`} />
         </div>
       )}
       <Card padded={false}>
@@ -187,7 +184,7 @@ function BoostForm({ initial, stores, onClose, onSaved }: { initial: Partial<Boo
         <Field label="Kupon / diskon (Rp)">
           <Input type="number" value={v.coupon ?? ''} onChange={(e) => set('coupon', Number(e.target.value))} />
         </Field>
-        <Field label="Apple service fee (Rp)" hint="Isi 0 jika bayar lewat web/Android">
+        <Field label="Apple service fee (Rp)" >
           <Input type="number" value={v.apple_fee ?? ''} onChange={(e) => set('apple_fee', Number(e.target.value))} />
         </Field>
         <div className="flex flex-col justify-end rounded-xl bg-canvas px-4 py-2.5">

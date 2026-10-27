@@ -40,10 +40,10 @@ export default function Dashboard() {
   if (!data.monthly.length)
     return (
       <>
-        <PageHeader title="Ringkasan" subtitle="Belum ada data untuk ditampilkan." />
-        <Empty title="Mulai dengan memasukkan data">
-          Unggah file export TikTok di menu <Link className="text-navy underline" to="/penjualan">Penjualan</Link>, atau impor file data awal di{' '}
-          <Link className="text-navy underline" to="/pengaturan">Pengaturan</Link>.
+        <PageHeader title="Ringkasan" />
+        <Empty title="Belum ada data">
+          <Link className="text-navy underline" to="/penjualan">Unggah penjualan</Link> ·{' '}
+          <Link className="text-navy underline" to="/pengaturan">Impor data</Link>
         </Empty>
       </>
     )
@@ -62,16 +62,16 @@ export default function Dashboard() {
           label="Laba (rugi) operasional"
           value={rp(k.operatingProfit, { compact: true })}
           tone={k.operatingProfit >= 0 ? 'good' : 'bad'}
-          hint={`Margin kontribusi ${pct(k.contributionPct)} · sebelum gaji owner & pajak`}
+          hint={`Margin kontribusi ${pct(k.contributionPct)}`}
         />
         <Stat label="Nilai stok di gudang" value={rp(k.stockValue, { compact: true })} hint={`${int(k.stockUnits)} pcs · tingkat retur ${pct(k.returnRate)}`} />
       </div>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-[1.15fr_1fr]">
-        <Card title="Posisi terhadap titik impas" subtitle="Omzet minimum per bulan agar tidak rugi">
+        <Card title="Posisi terhadap titik impas">
           <BepBlock data={data} />
         </Card>
-        <Card title="Catatan otomatis" subtitle="Hal yang perlu diperhatikan dari data terbaru">
+        <Card title="Catatan otomatis">
           <div className="flex flex-col gap-2.5">
             {data.insights.length ? (
               data.insights.map((i) => (
@@ -80,25 +80,23 @@ export default function Dashboard() {
                 </Callout>
               ))
             ) : (
-              <Callout tone="good" title="Tidak ada catatan">
-                Semua indikator dalam batas wajar.
-              </Callout>
+              <Callout tone="good" title="Tidak ada catatan" />
             )}
           </div>
         </Card>
       </div>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-2">
-        <Card title="Omzet neto per bulan" subtitle="Setelah retur, per toko">
+        <Card title="Omzet neto per bulan">
           <MonthlyStoreChart data={data.monthly} stores={store ? [store] : data.stores} />
         </Card>
-        <Card title="Laba (rugi) operasional per bulan" subtitle="Omzet − HPP − potongan TikTok − biaya − boost">
+        <Card title="Laba (rugi) operasional per bulan">
           <ProfitChart data={data.monthly} />
         </Card>
-        <Card title="Arus kas kumulatif" subtitle="Termasuk pembelian stok; minus = modal yang sudah ditanam">
+        <Card title="Arus kas kumulatif">
           <CashChart data={data.monthly} />
         </Card>
-        <Card title="Model terlaris" subtitle="Berdasarkan omzet neto pada periode ini">
+        <Card title="Model terlaris">
           <ModelBars
             data={data.byModel.slice(0, 7).map((m) => ({ label: `${m.code} · ${m.name}`, value: m.omzetNet, sub: `${int(m.pcsNet)} pcs · ${rp(m.omzetNet, { compact: true })}` }))}
           />
@@ -106,7 +104,7 @@ export default function Dashboard() {
       </div>
 
       <div className="mt-4">
-        <Card title="Stok per model" subtitle="Terjual (neto) dibanding sisa di gudang · data stok tidak terpengaruh filter periode">
+        <Card title="Stok per model">
           <StockBars data={data.stockByModel.filter((s) => s.onHand > 0 || s.soldNet > 0)} />
         </Card>
       </div>
@@ -127,7 +125,7 @@ function BepBlock({ data }: { data: DashboardData }) {
       <div className="flex flex-wrap items-end justify-between gap-2">
         <div>
           <div className="num text-[30px] font-semibold tracking-tight text-ink">{pct(b.progress, 0)}</div>
-          <div className="text-[13px] text-muted">dari titik impas tercapai (rata-rata per bulan)</div>
+          <div className="text-[13px] text-muted">dari titik impas</div>
         </div>
         <div className="text-right text-[13px] text-ink-2">
           <div>
@@ -153,9 +151,9 @@ function BepBlock({ data }: { data: DashboardData }) {
         </div>
         {b.plannedFixed && (
           <div className="col-span-2 rounded-xl bg-gold-soft px-4 py-3">
-            <dt className="text-[13px] font-medium text-[#7a5c2b]">Rencana biaya tetap {rp(b.plannedFixed, { compact: true })}/bulan (Pengaturan)</dt>
+            <dt className="text-[13px] font-medium text-[#7a5c2b]">Rencana biaya tetap {rp(b.plannedFixed, { compact: true })}/bulan</dt>
             <dd className="num mt-0.5 text-ink">
-              Titik impas menjadi <b>{rp(b.plannedBepOmzet, { compact: true })}</b> atau <b>±{int(b.plannedBepPcs)} pcs</b> per bulan.
+              Titik impas <b>{rp(b.plannedBepOmzet, { compact: true })}</b> · <b>±{int(b.plannedBepPcs)} pcs</b>/bulan
             </dd>
           </div>
         )}
@@ -171,7 +169,6 @@ function MonthlyTable({ data }: { data: DashboardData }) {
   return (
     <Card
       title="Tabel bulanan"
-      subtitle="Angka lengkap di balik grafik"
       actions={
         <Tabs
           value={view}

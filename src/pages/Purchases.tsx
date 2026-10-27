@@ -66,7 +66,6 @@ export default function Purchases() {
     <>
       <PageHeader
         title="Pembelian & Impor"
-        subtitle="Catat setiap batch impor: kapan dibayar, isi per SKU, kurs, dan biaya cargo. Stok bertambah saat status menjadi Tiba."
         actions={
           <Button
             variant="primary"
@@ -90,7 +89,7 @@ export default function Purchases() {
         />
       </div>
       {!all.length ? (
-        <Empty title="Belum ada pembelian">Tambahkan batch impor pertama Anda.</Empty>
+        <Empty title="Belum ada pembelian" />
       ) : (
         <div className="flex flex-col gap-4">
           {all.map(({ p, c }) => (
@@ -274,7 +273,7 @@ function PurchaseForm({ initial, refs, fallback, onClose, onSaved }: { initial: 
           <div className="num font-semibold text-ink">{rp(c.perPcs)} / pcs</div>
         </div>
       </div>
-      {c.unknown && <p className="mt-2 text-[12.5px] text-muted">SKU tanpa harga beli memakai landed cost cadangan {rp(fallback)} (bisa diubah di Pengaturan).</p>}
+      
       <Field label="Catatan" className="mt-4">
         <Textarea value={v.notes ?? ''} onChange={(e) => set('notes', e.target.value)} />
       </Field>

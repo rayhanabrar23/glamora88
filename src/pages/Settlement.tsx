@@ -35,15 +35,12 @@ export default function Settlement() {
     <>
       <PageHeader
         title="Pencairan TikTok"
-        subtitle="Unggah laporan Settlement / Income dari Seller Center untuk melihat dana yang benar-benar cair dan potongan TikTok yang sebenarnya."
       />
       <Upload stores={refs.stores} onSaved={reload} />
 
       {!t.lines ? (
         <div className="mt-4">
-          <Empty title="Belum ada laporan settlement">
-            Seller Center → Keuangan → Penghasilan (Income) → pilih periode → Ekspor. Unggah file .xlsx atau .csv-nya di atas, satu file per toko.
-          </Empty>
+          <Empty title="Belum ada laporan settlement" />
         </div>
       ) : (
         <>
@@ -68,16 +65,9 @@ export default function Settlement() {
             />
           </div>
 
-          {cmp.matched >= 20 && (
-            <div className="mt-4">
-              <Callout tone="info" title="Laba-rugi sudah memakai potongan asli">
-                Untuk {int(cmp.matched)} pesanan yang ada di laporan ini, menu Ringkasan dan Proyeksi Kas memakai potongan sebenarnya, bukan tarif perkiraan.
-              </Callout>
-            </div>
-          )}
 
           <div className="mt-4 grid gap-4 lg:grid-cols-2">
-            <Card title="Komponen potongan & pendapatan" subtitle="Total per kolom laporan (minus = potongan)">
+            <Card title="Komponen potongan & pendapatan">
               {data.components.length ? (
                 <ModelBars
                   data={data.components.slice(0, 10).map((c) => ({
@@ -119,7 +109,7 @@ export default function Settlement() {
 
           {data.unsettled.count > 0 && (
             <div className="mt-4">
-              <Card title="Pesanan terjual yang belum ada di laporan pencairan" subtitle="Cek di Seller Center: bisa jadi belum cair, tertahan, atau tidak ikut terekspor" padded={false}>
+              <Card title="Pesanan belum cair" padded={false}>
                 <Table
                   head={
                     <tr>
@@ -216,7 +206,7 @@ function Upload({ stores, onSaved }: { stores: string[]; onSaved: () => void }) 
   }
   const sum = (k: 'revenue' | 'fees' | 'amount') => parsed?.lines.reduce((a, l) => a + l[k], 0) ?? 0
   return (
-    <Card title="Unggah laporan settlement" subtitle="Satu file per toko. Mengunggah ulang periode yang sama akan memperbarui data, bukan menduplikasi.">
+    <Card title="Unggah laporan settlement">
       <div className="grid gap-4 lg:grid-cols-[280px_1fr]">
         <div className="flex flex-col gap-3">
           <Field label="Toko">
@@ -229,7 +219,7 @@ function Upload({ stores, onSaved }: { stores: string[]; onSaved: () => void }) 
         </div>
         <div>
           {err && <Callout tone="critical" title="File tidak bisa dibaca">{err}</Callout>}
-          {!parsed && !err && <Empty title="Belum ada file">Ringkasan isi laporan akan muncul di sini sebelum disimpan.</Empty>}
+          {!parsed && !err && <Empty title="Belum ada file" />}
           {parsed && (
             <div className="flex flex-col gap-3">
               <div className="grid grid-cols-3 gap-3">

@@ -106,7 +106,7 @@ export default function Projection() {
     <>
       <PageHeader
         title="Proyeksi Kas"
-        subtitle={`${monthLabel(months[0], true)} – ${monthLabel(months[months.length - 1], true)}. Ubah asumsi di bawah; hasil langsung dihitung ulang.`}
+        subtitle={`${monthLabel(months[0], true)} – ${monthLabel(months[months.length - 1], true)}`}
         actions={
           <>
             <Button icon="download" onClick={reset}>
@@ -148,7 +148,6 @@ export default function Projection() {
       <div className="mt-4 flex flex-col gap-2">
         {r.stockOutMonth && (
           <Callout tone="warning" title={`Stok habis di ${monthLabel(r.stockOutMonth, true)}`}>
-            Volume yang direncanakan melebihi stok tersedia mulai bulan ini; penjualan dibatasi stok. Tambahkan rencana restock di bawah.
           </Callout>
         )}
         <Callout tone={r.endCash >= s.openingCash ? 'good' : r.fundingNeed > 0 ? 'critical' : 'info'} title="Kesimpulan skenario">
@@ -161,13 +160,13 @@ export default function Projection() {
       </div>
 
       <div className="mt-4">
-        <Card title="Saldo kas per bulan" subtitle="Saldo awal + dana cair − biaya − pembelian stok">
+        <Card title="Saldo kas per bulan">
           <CashChart data={r.rows.map((x) => ({ month: x.month, cumulativeCash: x.cashEnd, netCash: x.netCash }))} />
         </Card>
       </div>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_1.25fr]">
-        <Card title="Asumsi dasar" subtitle="Terisi otomatis dari data portal; ubah sesuai rencana">
+        <Card title="Asumsi dasar">
           <div className="grid grid-cols-2 gap-4">
             <Field label="Mulai bulan">
               <Input type="month" value={s.start} onChange={(e) => e.target.value && upd({ start: e.target.value })} />
@@ -175,7 +174,7 @@ export default function Projection() {
             <Field label="Lama proyeksi (bulan)">
               <Input type="number" min={1} max={36} value={s.months} onChange={(e) => upd({ months: Math.min(36, Math.max(1, Number(e.target.value) || 1)) })} />
             </Field>
-            <Field label="Saldo kas awal (Rp)" hint="Uang bisnis yang tersedia saat ini">
+            <Field label="Saldo kas awal (Rp)">
               <Input type="number" value={s.openingCash} onChange={(e) => upd({ openingCash: Number(e.target.value) })} />
             </Field>
             <Field label="Stok awal (pcs)" hint={`Dari data: ${int(base.openingStock)} pcs`}>
@@ -195,7 +194,7 @@ export default function Projection() {
                 onChange={(e) => upd({ commissionPct: Number(e.target.value) / 100 })}
               />
             </Field>
-            <Field label="Biaya per pesanan (Rp)" hint="Pemrosesan + fee paket berat (rata-rata)">
+            <Field label="Biaya per pesanan (Rp)">
               <Input type="number" value={s.perOrderFee} onChange={(e) => upd({ perOrderFee: Number(e.target.value) })} />
             </Field>
             <Field label="Komisi tim (Rp/pcs)" hint={`Data: ${rp(base.teamCommissionPerPcs)}`}>
@@ -210,7 +209,7 @@ export default function Projection() {
           </p>
         </Card>
 
-        <Card title="Volume penjualan (pcs neto per bulan)" subtitle="Ketik langsung atau pakai isian cepat">
+        <Card title="Volume penjualan (pcs neto per bulan)">
           <div className="mb-4 flex flex-wrap gap-2">
             <Button onClick={() => setAllVolume(base.avgPcsSelling)}>Rata-rata bulan aktif ({int(base.avgPcsSelling)})</Button>
             <Button onClick={() => setAllVolume(base.bestPcs)}>Bulan terbaik ({int(base.bestPcs)})</Button>
@@ -230,7 +229,6 @@ export default function Projection() {
       <div className="mt-4 grid gap-4 lg:grid-cols-3">
         <ListCard<CostItem>
           title="Biaya tetap bulanan"
-          subtitle="Gaji pokok, sewa, listrik, boost, dll. Atur bulan mulai & selesai"
           items={s.costs}
           onChange={(costs) => upd({ costs })}
           make={() => ({ id: uid(), name: 'Biaya baru', amount: 0, from: s.start })}
@@ -243,7 +241,6 @@ export default function Projection() {
         />
         <ListCard<Restock>
           title="Rencana restock"
-          subtitle="Dibayar & masuk stok di bulan yang sama"
           items={s.restocks}
           onChange={(restocks) => upd({ restocks })}
           make={() => ({ id: uid(), month: addMonths(s.start, 1), pcs: 300, costPerPcs: s.landedCost })}
@@ -255,7 +252,7 @@ export default function Projection() {
         />
         <ListCard<OneOff>
           title="Kas sekali (keluar / masuk)"
-          subtitle="Mis. sisa sewa ruko, beli peralatan. Isi minus untuk uang masuk (suntikan modal)"
+          subtitle="Minus = uang masuk"
           items={s.oneOffs}
           onChange={(oneOffs) => upd({ oneOffs })}
           make={() => ({ id: uid(), name: 'Pengeluaran', month: s.start, amount: 0 })}
@@ -327,7 +324,7 @@ function ListCard<T extends { id: string }>({
   fields,
 }: {
   title: string
-  subtitle: string
+  subtitle?: string
   items: T[]
   onChange: (v: T[]) => void
   make: () => T

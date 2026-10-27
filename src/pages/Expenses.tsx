@@ -31,13 +31,6 @@ const clsTone: Record<string, 'neutral' | 'gold' | 'info' | 'good'> = {
   Variabel: 'good',
 }
 
-const CLS_HELP: Record<string, string> = {
-  Tetap: 'Sama tiap bulan berapa pun penjualannya (sewa, IPL).',
-  'Tetap (diskresioner)': 'Tetap per bulan, tapi besarnya diputuskan owner dan bisa dipotong.',
-  'Semi-variabel': 'Ada bagian tetap + bagian yang ikut naik (gaji pokok + komisi, listrik).',
-  Variabel: 'Naik-turun sebanding penjualan (komisi, kemasan per paket).',
-}
-
 export default function Expenses() {
   const { data, error, reload } = useData<Expense[]>('/expenses')
   const [form, setForm] = useState<Partial<Expense> | null>(null)
@@ -67,7 +60,6 @@ export default function Expenses() {
     <>
       <PageHeader
         title="Biaya Operasional"
-        subtitle="Gaji, komisi, sewa, listrik, dan biaya lain. Boost dicatat terpisah di menu Boost & Promosi."
         actions={
           <Button variant="primary" icon="plus" onClick={() => setForm({ exp_date: today(), category: 'Gaji', classification: 'Semi-variabel', cash_only: 0 })}>
             Catat biaya
@@ -127,7 +119,7 @@ export default function Expenses() {
             </Table>
           )}
         </Card>
-        <Card title="Rekap per bulan" subtitle="Menurut klasifikasi biaya">
+        <Card title="Rekap per bulan">
           <div className="flex flex-col gap-3">
             {byMonth.map(([m, r]) => {
               const total = Object.values(r).reduce((a, b) => a + b, 0)
@@ -193,7 +185,7 @@ function ExpenseForm({ initial, onClose, onSaved }: { initial: Partial<Expense>;
         <Field label="Pos biaya">
           <Select value={v.category ?? 'Gaji'} onChange={(e) => setV({ ...v, category: e.target.value })} options={[...EXPENSE_CATEGORIES]} />
         </Field>
-        <Field label="Klasifikasi" hint={CLS_HELP[v.classification ?? 'Tetap']}>
+        <Field label="Klasifikasi">
           <Select value={v.classification ?? 'Tetap'} onChange={(e) => setV({ ...v, classification: e.target.value as Expense['classification'] })} options={[...CLASSIFICATIONS]} />
         </Field>
         <Field label="Keterangan" className="col-span-2">
@@ -201,10 +193,7 @@ function ExpenseForm({ initial, onClose, onSaved }: { initial: Partial<Expense>;
         </Field>
         <label className="col-span-2 flex items-start gap-3 rounded-xl bg-canvas px-4 py-3 text-[13.5px] text-ink-2">
           <input type="checkbox" className="mt-1 accent-[#1f2a44]" checked={!!v.cash_only} onChange={(e) => setV({ ...v, cash_only: e.target.checked ? 1 : 0 })} />
-          <span>
-            <b className="text-ink">Hanya arus kas, bukan beban bulan ini.</b> Untuk uang muka sewa, deposit, atau pembelian peralatan: dihitung di arus kas tetapi tidak
-            mengurangi laba bulan itu.
-          </span>
+          <span>Hanya arus kas (uang muka, deposit, peralatan)</span>
         </label>
       </div>
     </Modal>
