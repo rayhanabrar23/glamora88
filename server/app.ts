@@ -503,13 +503,13 @@ app.get('/settlements/report', async (c) => {
   const startOf = new Map<string, string>()
   const endOf = new Map<string, string>()
   for (const r of rows) {
-    const d = r.order_created_at ?? r.settled_at
+    const d = (r.order_created_at ?? r.settled_at)?.slice(0, 10)
     if (!d) continue
     if (!startOf.has(r.store) || d < startOf.get(r.store)!) startOf.set(r.store, d)
     if (!endOf.has(r.store) || d > endOf.get(r.store)!) endOf.set(r.store, d)
   }
   const unsettled = [...orders.values()]
-    .filter((o) => o.net > 0 && startOf.has(o.store) && o.date >= startOf.get(o.store)! && o.date <= endOf.get(o.store)! && !settledKeys.has(`${o.store}|${o.order_id}`))
+    .filter((o) => o.net > 0 && startOf.has(o.store) && o.date.slice(0, 10) >= startOf.get(o.store)! && o.date.slice(0, 10) <= endOf.get(o.store)! && !settledKeys.has(`${o.store}|${o.order_id}`))
     .sort((a, b) => b.date.localeCompare(a.date))
   const orderRows = rows.filter((r) => isOrder(r.kind))
   return c.json({

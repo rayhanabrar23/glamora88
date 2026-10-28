@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react'
-import readXlsxFile from 'read-excel-file'
 import { Link } from 'react-router-dom'
 import { parseCsv, parseTikTokRows, type ParseResult } from '../../shared/tiktok'
 import { SALE_STATUSES, type Sale } from '../../shared/types'
+import { readXlsx } from '../lib/xlsx'
 import { api, qs } from '../lib/api'
 import { dateLabel, int, rp, today } from '../lib/format'
 import { useRefs } from '../lib/refs'
@@ -218,7 +218,7 @@ function Upload({ stores, onDone }: { stores: string[]; onDone: () => void }) {
     try {
       let rows: unknown[][]
       if (/\.csv$/i.test(fl.name)) rows = parseCsv(await fl.text())
-      else rows = (await readXlsxFile(fl)) as unknown[][]
+      else rows = (await readXlsx(fl)) as unknown[][]
       setParsed(parseTikTokRows(rows as never))
     } catch (e) {
       setErr((e as Error).message)

@@ -34,8 +34,24 @@ const REVENUE = [/^total revenue$/, /^total pendapatan$/, /^revenue$/, /^pendapa
 const FEES = [/^total fees$/, /^total biaya$/, /^biaya total$/]
 const SETTLED = [/settled time/, /settlement time/, /waktu penyelesaian/, /tanggal penyelesaian/, /waktu pencairan/]
 const CREATED = [/order created time/, /^created time$/, /waktu (pembuatan|pesanan) dibuat/, /waktu pesanan/]
-const TYPE = [/^type$/, /^tipe$/, /^jenis$/]
-const SKIP_DETAIL = [/currency|mata uang/, /time|waktu|tanggal|date/, /id$|^id |nomor|number/, /^type$|^tipe$|^jenis$/, /status/, /sku|product|produk|quantity|jumlah barang/]
+const TYPE = [/^type$/, /^tipe$/, /^jenis$/, /^transaction type$/, /^jenis transaksi$/, /^tipe transaksi$/]
+const SKIP_DETAIL = [
+  /currency|mata uang/,
+  /time|waktu|tanggal|date/,
+  /id$|^id |nomor|number/,
+  /type$|^tipe|^jenis/,
+  /status/,
+  /sku|product|produk|quantity|jumlah barang|items sold|source|sumber/,
+  /weight|berat/,
+  /customer|pelanggan|pembeli/,
+  /platform discount|platform co-funded|diskon platform/,
+  /before discount|sebelum diskon/,
+]
+// Akhir blok biaya di laporan TikTok: kolom sesudahnya hanya informasi.
+const DETAIL_END = [/^adjustment amount$/, /^related order id$/, /^customer payment$/, /jumlah penyesuaian/, /pembayaran pelanggan/]
+// "Shipping cost" = subtotal; kolom ongkir sesudahnya adalah rinciannya.
+const SHIPPING_TOTAL = /^shipping cost$|^biaya pengiriman$|^ongkos kirim$/
+const SHIPPING_PART = /shipping|logistic|insurance reimbursement|pengiriman|ongkir|logistik/
 
 const find = (header: string[], pats: RegExp[]) => {
   for (const p of pats) {
@@ -74,9 +90,26 @@ export function parseSettlementRows(rows: Cell[][]): SettlementParse | null {
   const used = new Set(Object.values(col).filter((i) => i >= 0))
   const body = rows.slice(hIdx + 1)
   // kolom rincian = kolom angka lain yang bukan waktu/ID
+  const hasValue = (i: number) => body.some((r) => (toNum(r[i]) ?? 0) !== 0)
+  const end = find(header, DETAIL_END)
+  const adjustment = header.findIndex((h) => /^adjustment amount$|^jumlah penyesuaian$/.test(h))
+  let inShipping = false
   const detailIdx = header
     .map((h, i) => ({ h, i }))
-    .filter(({ h, i }) => h && !used.has(i) && !SKIP_DETAIL.some((p) => p.test(h)) && body.slice(0, 200).some((r) => toNum(r[i]) !== null && toNum(r[i]) !== 0))
+    .filter(({ h, i }) => {
+      if (!h || used.has(i)) return false
+      if (i === adjustment) return hasValue(i)
+      // format TikTok: rincian ada di antara Total Revenue dan kolom informasi di akhir
+      if (col.revenue >= 0 && col.fees > col.revenue && (i < col.revenue || (end > col.fees && i >= end))) return false
+      if (SHIPPING_TOTAL.test(h)) {
+        inShipping = true
+        return hasValue(i)
+      }
+      if (inShipping && SHIPPING_PART.test(h)) return false
+      inShipping = false
+      if (/^seller discounts$|refund of seller discounts|^diskon penjual$/.test(h)) return false
+      return !SKIP_DETAIL.some((p) => p.test(h)) && hasValue(i)
+    })
     .map(({ i }) => i)
 
   const lines: SettlementLine[] = []

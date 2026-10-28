@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import readXlsxFile, { readSheetNames } from 'read-excel-file'
 import { parseSettlementRows, type SettlementParse } from '../../shared/settlement'
 import { parseCsv } from '../../shared/tiktok'
+import { readXlsx, readXlsxSheetNames } from '../lib/xlsx'
 import { api } from '../lib/api'
 import { dateLabel, int, monthLabel, pct, rp } from '../lib/format'
 import { useRefs } from '../lib/refs'
@@ -169,9 +169,9 @@ function Upload({ stores, onSaved }: { stores: string[]; onSaved: () => void }) 
       if (/\.csv$/i.test(f.name)) result = parseSettlementRows(parseCsv(await f.text()))
       else {
         let lastErr: Error | null = null
-        for (const sheet of await readSheetNames(f)) {
+        for (const sheet of await readXlsxSheetNames(f)) {
           try {
-            result = parseSettlementRows((await readXlsxFile(f, { sheet })) as never)
+            result = parseSettlementRows((await readXlsx(f, sheet)) as never)
           } catch (e) {
             lastErr = e as Error
             result = null
