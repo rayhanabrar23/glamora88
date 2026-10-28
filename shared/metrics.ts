@@ -189,7 +189,7 @@ export function computeStock(b: DataBundle): StockRow[] {
 
 export function computeMonthly(b: DataBundle, from?: string, to?: string): MonthRow[] {
   const s = b.settings
-  const commission = n(s.platform_commission_pct, 0.1) + n(s.dynamic_commission_pct, 0.06)
+  const commission = n(s.platform_commission_pct, 0.08) + n(s.dynamic_commission_pct, 0.055)
   const procFee = n(s.order_processing_fee, 1250)
   const heavyFee = n(s.heavy_parcel_fee, 10000)
   const heavyKg = n(s.heavy_parcel_threshold_kg, 0.3)

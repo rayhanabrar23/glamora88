@@ -470,7 +470,7 @@ app.get('/settlements/report', async (c) => {
   const comp = new Map<string, number>()
   for (const r of rows) for (const [k, v] of Object.entries(JSON.parse(r.details || '{}') as Record<string, number>)) comp.set(k, (comp.get(k) ?? 0) + v)
   // perkiraan vs aktual untuk pesanan yang ada di kedua data
-  const commission = num(settings.platform_commission_pct, 0.1) + num(settings.dynamic_commission_pct, 0.06)
+  const commission = num(settings.platform_commission_pct, 0.08) + num(settings.dynamic_commission_pct, 0.055)
   const perOrder = num(settings.order_processing_fee, 1250)
   const heavyFee = num(settings.heavy_parcel_fee, 10000)
   const heavyKg = num(settings.heavy_parcel_threshold_kg, 0.3)
@@ -562,7 +562,7 @@ app.get('/projection/base', async (c) => {
   return c.json({
     avgPrice: d.kpi.avgPrice,
     landedCost: pcs ? hpp / pcs : num(s.fallback_landed_cost, 120000),
-    commissionPct: actualFeePct ?? num(s.platform_commission_pct, 0.1) + num(s.dynamic_commission_pct, 0.06),
+    commissionPct: actualFeePct ?? num(s.platform_commission_pct, 0.08) + num(s.dynamic_commission_pct, 0.055),
     perOrderFee: actualFeePct != null ? 0 : num(s.order_processing_fee, 1250) + num(s.heavy_parcel_fee, 10000) * heavyShare,
     feeSource: actualFeePct != null ? 'settlement' : 'tarif',
     teamCommissionPerPcs: pcs ? varExp / pcs : 0,

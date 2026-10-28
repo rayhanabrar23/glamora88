@@ -132,8 +132,8 @@ export const SCHEMA: string[] = [
 ]
 
 export const DEFAULT_SETTINGS: Record<string, string> = {
-  platform_commission_pct: '0.10',
-  dynamic_commission_pct: '0.06',
+  platform_commission_pct: '0.08',
+  dynamic_commission_pct: '0.055',
   order_processing_fee: '1250',
   heavy_parcel_fee: '10000',
   heavy_parcel_threshold_kg: '0.3',
