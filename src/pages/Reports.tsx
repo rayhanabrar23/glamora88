@@ -76,7 +76,7 @@ export default function Reports() {
 
       <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         {REPORTS.map((r) => (
-          <div key={r.id} className="flex flex-col rounded-2xl border border-line bg-surface p-5 shadow-[0_1px_2px_rgba(27,35,51,0.04)]">
+          <div key={r.id} className="glass lift flex flex-col rounded-3xl p-5">
             <div className="text-[15px] font-semibold text-ink">{r.title}</div>
             <div className="mt-3 flex flex-1 flex-wrap content-start gap-1.5">
               {r.sheets.map((s) => (

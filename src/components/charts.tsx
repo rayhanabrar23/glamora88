@@ -23,7 +23,7 @@ const NEG = '#b23a3a'
 type TipItem = { name?: string; value?: number; color?: string; payload?: Record<string, unknown> }
 function TipBox({ title, rows }: { title: string; rows: { label: string; value: string; color?: string }[] }) {
   return (
-    <div className="min-w-[180px] rounded-xl border border-line bg-surface px-3.5 py-2.5 text-[13px] shadow-lg">
+    <div className="glass-strong min-w-[180px] rounded-2xl px-3.5 py-2.5 text-[13px]">
       <div className="mb-1.5 font-semibold text-ink">{title}</div>
       {rows.map((r) => (
         <div key={r.label} className="flex items-center justify-between gap-4 py-0.5">

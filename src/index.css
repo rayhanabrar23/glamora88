@@ -36,7 +36,12 @@
 html, body, #root { height: 100%; }
 body {
   margin: 0;
-  background: var(--color-canvas);
+  background-color: var(--color-canvas);
+  background-image:
+    radial-gradient(900px 520px at 8% -8%, rgba(176, 141, 87, 0.22), transparent 62%),
+    radial-gradient(760px 520px at 102% 4%, rgba(47, 60, 92, 0.16), transparent 60%),
+    radial-gradient(900px 620px at 55% 112%, rgba(176, 141, 87, 0.16), transparent 62%);
+  background-attachment: fixed;
   color: var(--color-ink);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
@@ -45,3 +50,57 @@ body {
 .num { font-variant-numeric: tabular-nums; }
 ::selection { background: var(--color-gold-soft); }
 input, select, textarea, button { font: inherit; }
+
+/* ---------- permukaan kaca ---------- */
+.glass {
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.85);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.9) inset, 0 10px 34px -12px rgba(31, 42, 68, 0.16), 0 2px 6px rgba(31, 42, 68, 0.04);
+  -webkit-backdrop-filter: blur(18px) saturate(1.4);
+  backdrop-filter: blur(18px) saturate(1.4);
+}
+.glass-strong {
+  background: #fffdfa;
+  border: 1px solid #fff;
+  box-shadow: 0 24px 60px -18px rgba(31, 42, 68, 0.3), 0 4px 12px rgba(31, 42, 68, 0.06);
+}
+.lift { transition: transform 0.25s cubic-bezier(0.2, 0.7, 0.2, 1), box-shadow 0.25s; }
+.lift:hover { transform: translateY(-3px); box-shadow: 0 1px 0 rgba(255, 255, 255, 0.9) inset, 0 18px 40px -14px rgba(31, 42, 68, 0.24), 0 2px 6px rgba(31, 42, 68, 0.05); }
+
+.rail {
+  background: linear-gradient(170deg, #2f3c5c 0%, #1f2a44 55%, #18213a 100%);
+  box-shadow: 0 22px 44px -14px rgba(31, 42, 68, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.06) inset;
+}
+.hero {
+  background:
+    radial-gradient(420px 260px at 92% -10%, rgba(176, 141, 87, 0.5), transparent 65%),
+    radial-gradient(360px 260px at -5% 115%, rgba(74, 92, 140, 0.55), transparent 65%),
+    linear-gradient(140deg, #24304e 0%, #1b2440 60%, #151c33 100%);
+  box-shadow: 0 24px 50px -18px rgba(31, 42, 68, 0.6);
+}
+
+/* ---------- gerak ---------- */
+@keyframes page-in { from { opacity: 0; transform: translateY(10px); filter: blur(6px); } to { opacity: 1; transform: none; filter: none; } }
+@keyframes pop-in { from { opacity: 0; transform: translateY(-6px) scale(0.97); } to { opacity: 1; transform: none; } }
+@keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+@keyframes shimmer { to { background-position: -200% 0; } }
+.page-in { animation: page-in 0.45s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+.pop-in { animation: pop-in 0.18s cubic-bezier(0.2, 0.7, 0.2, 1) both; transform-origin: top right; }
+.stagger > * { animation: rise 0.5s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+.stagger > *:nth-child(2) { animation-delay: 0.05s; }
+.stagger > *:nth-child(3) { animation-delay: 0.1s; }
+.stagger > *:nth-child(4) { animation-delay: 0.15s; }
+.stagger > *:nth-child(5) { animation-delay: 0.2s; }
+.stagger > *:nth-child(6) { animation-delay: 0.25s; }
+.skeleton {
+  border-radius: 14px;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.55) 25%, rgba(255, 255, 255, 0.95) 50%, rgba(255, 255, 255, 0.55) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .page-in, .pop-in, .stagger > *, .skeleton { animation: none; }
+  .lift:hover { transform: none; }
+}
+.rail-item { height: 42px; width: 42px; }
+@media (max-height: 720px) { .rail-item { height: 34px; width: 34px; } }

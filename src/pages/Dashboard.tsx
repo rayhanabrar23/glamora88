@@ -3,8 +3,9 @@ import type { DashboardData } from '../../shared/dashboard'
 import { qs } from '../lib/api'
 import { int, monthLabel, pct, rp } from '../lib/format'
 import { useData } from '../lib/useData'
-import { CashChart, ModelBars, MonthlyStoreChart, ProfitChart, StockBars } from '../components/charts'
-import { Callout, Card, Empty, ErrorBox, Input, Loading, PageHeader, Select, Stat, Table, Tabs, td, tdNum, th } from '../components/ui'
+import { CashChart, ModelBars, MonthlyStoreChart, ProfitChart } from '../components/charts'
+import { Icon } from '../components/Icon'
+import { Badge, Callout, Card, Empty, ErrorBox, Input, Loading, PageHeader, Select, Stat, Table, Tabs, td, tdNum, th } from '../components/ui'
 import { Link } from 'react-router-dom'
 
 export default function Dashboard() {
@@ -14,21 +15,21 @@ export default function Dashboard() {
   const { data, error, loading, reload } = useData<DashboardData>(`/dashboard${qs({ from, to, store })}`)
 
   const filters = (
-    <div className="flex flex-wrap items-end gap-2">
+    <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-end">
       <label className="text-[12px] text-muted">
         Dari
-        <Input type="month" value={from} onChange={(e) => setFrom(e.target.value)} className="mt-1 h-9 w-[150px]" />
+        <Input type="month" value={from} onChange={(e) => setFrom(e.target.value)} className="mt-1 h-9 w-full sm:w-[150px]" />
       </label>
       <label className="text-[12px] text-muted">
         Sampai
-        <Input type="month" value={to} onChange={(e) => setTo(e.target.value)} className="mt-1 h-9 w-[150px]" />
+        <Input type="month" value={to} onChange={(e) => setTo(e.target.value)} className="mt-1 h-9 w-full sm:w-[150px]" />
       </label>
-      <label className="text-[12px] text-muted">
+      <label className="col-span-2 text-[12px] text-muted">
         Toko
         <Select
           value={store}
           onChange={(e) => setStore(e.target.value)}
-          className="mt-1 h-9 w-[170px]"
+          className="mt-1 h-9 w-full sm:w-[170px]"
           options={[{ value: '', label: 'Semua toko' }, ...(data?.stores ?? []).map((s) => ({ value: s, label: s }))]}
         />
       </label>
@@ -51,27 +52,52 @@ export default function Dashboard() {
   const k = data.kpi
   const b = data.bep
   const periodText = `${monthLabel(data.period.from, true)} – ${monthLabel(data.period.to, true)}`
+  const hour = new Date().getHours()
+  const greet = hour < 11 ? 'Selamat pagi' : hour < 15 ? 'Selamat siang' : hour < 18 ? 'Selamat sore' : 'Selamat malam'
+  const need = data.insights.filter((i) => i.tone === 'warning' || i.tone === 'critical')
   return (
     <div className={loading ? 'opacity-70 transition-opacity' : ''}>
-      <PageHeader title="Ringkasan Kinerja" subtitle={`${periodText} · ${data.period.months} bulan${store ? ` · ${store}` : ''}`} actions={filters} />
+      <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <div className="text-[12px] font-semibold tracking-[0.16em] text-gold uppercase">Ringkasan Kinerja</div>
+          <h1 className="mt-1 text-[30px] leading-tight font-semibold tracking-tight text-ink">{greet}, tim Glamora</h1>
+          <p className="mt-1 text-[14.5px] text-muted">
+            {periodText} · {data.period.months} bulan{store ? ` · ${store}` : ''}
+          </p>
+        </div>
+        <div className="glass rounded-[22px] px-4 py-3">{filters}</div>
+      </div>
 
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <Stat label="Omzet neto" value={rp(k.omzetNet, { compact: true })} hint={`Rata-rata ${rp(b.actualOmzetPerMonth, { compact: true })} per bulan`} />
-        <Stat label="Produk terjual" value={`${int(k.pcsNet)} pcs`} hint={`${int(k.orders)} pesanan · harga rata-rata ${rp(k.avgPrice, { compact: true })}`} />
+      <div className="stagger grid gap-4 lg:grid-cols-[1.25fr_1fr]">
+        <Hero data={data} />
+        <Card title="Posisi terhadap titik impas">
+          <BepBlock data={data} />
+        </Card>
+      </div>
+
+      <div className="stagger mt-4 grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <Stat icon="coins" label="Omzet neto" value={rp(k.omzetNet, { compact: true })} hint={`Rata-rata ${rp(b.actualOmzetPerMonth, { compact: true })} per bulan`} />
+        <Stat icon="sales" label="Produk terjual" value={`${int(k.pcsNet)} pcs`} hint={`${int(k.orders)} pesanan · harga rata-rata ${rp(k.avgPrice, { compact: true })}`} />
         <Stat
+          icon={k.operatingProfit >= 0 ? 'up' : 'down'}
           label="Laba (rugi) operasional"
           value={rp(k.operatingProfit, { compact: true })}
           tone={k.operatingProfit >= 0 ? 'good' : 'bad'}
           hint={`Margin kontribusi ${pct(k.contributionPct)}`}
         />
-        <Stat label="Nilai stok di gudang" value={rp(k.stockValue, { compact: true })} hint={`${int(k.stockUnits)} pcs · tingkat retur ${pct(k.returnRate)}`} />
+        <Stat icon="product" label="Nilai stok di gudang" value={rp(k.stockValue, { compact: true })} hint={`${int(k.stockUnits)} pcs · tingkat retur ${pct(k.returnRate)}`} />
       </div>
 
-      <div className="mt-4 grid gap-4 lg:grid-cols-[1.15fr_1fr]">
-        <Card title="Posisi terhadap titik impas">
-          <BepBlock data={data} />
-        </Card>
-        <Card title="Catatan otomatis">
+      <div className="mt-4 grid gap-4 lg:grid-cols-[1.5fr_1fr]">
+        <StockPulse data={data} />
+        <Card
+          title={
+            <span className="flex items-center gap-2">
+              Catatan otomatis
+              {need.length > 0 && <span className="num rounded-full bg-bad-soft px-2 py-0.5 text-[11.5px] font-semibold text-bad">{need.length} perlu perhatian</span>}
+            </span>
+          }
+        >
           <div className="flex flex-col gap-2.5">
             {data.insights.length ? (
               data.insights.map((i) => (
@@ -83,6 +109,9 @@ export default function Dashboard() {
               <Callout tone="good" title="Tidak ada catatan" />
             )}
           </div>
+          <Link to="/proyeksi" className="mt-4 flex h-11 items-center justify-center gap-2 rounded-full bg-navy text-[14px] font-semibold text-white shadow-[0_10px_22px_-10px_rgba(31,42,68,0.7)] transition-colors hover:bg-navy-2">
+            Buka proyeksi kas <Icon name="arrow" size={15} />
+          </Link>
         </Card>
       </div>
 
@@ -104,61 +133,172 @@ export default function Dashboard() {
       </div>
 
       <div className="mt-4">
-        <Card title="Stok per model">
-          <StockBars data={data.stockByModel.filter((s) => s.onHand > 0 || s.soldNet > 0)} />
-        </Card>
-      </div>
-
-      <div className="mt-4">
         <MonthlyTable data={data} />
       </div>
     </div>
   )
 }
 
+function Hero({ data }: { data: DashboardData }) {
+  const k = data.kpi
+  const rows = data.monthly.slice(-12)
+  const max = Math.max(1, ...rows.map((r) => Math.abs(r.operatingProfit)))
+  const last = rows[rows.length - 1]
+  const profit = k.operatingProfit >= 0
+  return (
+    <section className="hero relative overflow-hidden rounded-3xl p-6 text-white sm:p-7">
+      <div className="flex items-center gap-2 text-[12.5px] font-medium text-white/70">
+        <span className={`h-2 w-2 rounded-full ${profit ? 'bg-[#6fd3a4]' : 'bg-[#ff9d92]'}`} />
+        Laba (rugi) operasional periode ini
+      </div>
+      <div className="num mt-2 text-[40px] leading-none font-semibold tracking-tight sm:text-[46px]">{rp(k.operatingProfit, { compact: true })}</div>
+      <p className="mt-2 max-w-md text-[14px] leading-relaxed text-white/75">
+        Omzet neto {rp(k.omzetNet, { compact: true })} dari {int(k.pcsNet)} pcs, margin kontribusi {pct(k.contributionPct)}.
+      </p>
+      <div className="mt-5 flex flex-wrap gap-2 text-[12.5px]">
+        <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1.5 backdrop-blur">
+          Boost <b className="num font-semibold">{rp(k.boostSpend, { compact: true })}</b>
+        </span>
+        {last && (
+          <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1.5 backdrop-blur">
+            {monthLabel(last.month, true)} <b className={`num font-semibold ${last.operatingProfit >= 0 ? 'text-[#8fe0b8]' : 'text-[#ffb1a8]'}`}>{rp(last.operatingProfit, { compact: true })}</b>
+          </span>
+        )}
+      </div>
+      <div className="mt-6 flex h-[72px] items-end gap-1.5" aria-hidden="true">
+        {rows.map((r) => (
+          <div key={r.month} className="flex h-full flex-1 flex-col justify-end" title={`${monthLabel(r.month, true)}: ${rp(r.operatingProfit)}`}>
+            <div
+              className={`rounded-t-md rounded-b-sm ${r.operatingProfit >= 0 ? 'bg-gradient-to-t from-[#b08d57] to-[#e6cf9f]' : 'bg-white/25'}`}
+              style={{ height: `${Math.max(6, (Math.abs(r.operatingProfit) / max) * 100)}%` }}
+            />
+          </div>
+        ))}
+      </div>
+      <div className="mt-2 flex justify-between text-[11px] text-white/50">
+        <span>{rows[0] && monthLabel(rows[0].month, true)}</span>
+        <span>Emas = laba · abu = rugi</span>
+        <span>{last && monthLabel(last.month, true)}</span>
+      </div>
+    </section>
+  )
+}
+
+function Gauge({ value }: { value: number }) {
+  // busur setengah lingkaran; skala 0–120% dengan penanda titik impas di 100%
+  const R = 80
+  const len = Math.PI * R
+  const p = Math.max(0, Math.min(1.2, value)) / 1.2
+  const color = value >= 1 ? 'var(--color-good)' : value >= 0.7 ? 'var(--color-warn)' : 'var(--color-bad)'
+  const ang = Math.PI * (1 - 1 / 1.2)
+  const mx = 100 + Math.cos(ang) * R
+  const my = 96 - Math.sin(ang) * R
+  return (
+    <svg viewBox="0 0 200 112" className="w-full max-w-[250px]" role="img" aria-label={`${Math.round(value * 100)}% dari titik impas`}>
+      <path d="M20 96 A80 80 0 0 1 180 96" fill="none" stroke="var(--color-line-soft)" strokeWidth="14" strokeLinecap="round" />
+      <path d="M20 96 A80 80 0 0 1 180 96" fill="none" stroke={color} strokeWidth="14" strokeLinecap="round" strokeDasharray={`${len * p} ${len}`} style={{ transition: 'stroke-dasharray 0.8s cubic-bezier(0.2,0.7,0.2,1)' }} />
+      <circle cx={mx} cy={my} r="5" fill="#fff" stroke="var(--color-ink)" strokeWidth="2.5" />
+      <text x="100" y="86" textAnchor="middle" className="num" style={{ fontSize: 34, fontWeight: 600, fill: 'var(--color-ink)', letterSpacing: '-0.02em' }}>
+        {Math.round(value * 100)}%
+      </text>
+      <text x="100" y="106" textAnchor="middle" style={{ fontSize: 11.5, fill: 'var(--color-muted)' }}>
+        dari titik impas
+      </text>
+    </svg>
+  )
+}
+
 function BepBlock({ data }: { data: DashboardData }) {
   const b = data.bep
-  const p = Math.min(1.2, b.progress ?? 0)
-  const tone = (b.progress ?? 0) >= 1 ? 'bg-good' : (b.progress ?? 0) >= 0.7 ? 'bg-warn' : 'bg-bad'
   return (
     <div>
-      <div className="flex flex-wrap items-end justify-between gap-2">
-        <div>
-          <div className="num text-[30px] font-semibold tracking-tight text-ink">{pct(b.progress, 0)}</div>
-          <div className="text-[13px] text-muted">dari titik impas</div>
-        </div>
-        <div className="text-right text-[13px] text-ink-2">
+      <div className="flex flex-col items-center gap-4 sm:flex-row sm:items-center">
+        <Gauge value={b.progress ?? 0} />
+        <dl className="grid w-full grid-cols-2 gap-x-5 gap-y-3 text-[13.5px] sm:grid-cols-1">
           <div>
-            Rata-rata omzet <span className="num font-semibold text-ink">{rp(b.actualOmzetPerMonth, { compact: true })}</span>
+            <dt className="text-muted">Rata-rata omzet</dt>
+            <dd className="num font-semibold text-ink">{rp(b.actualOmzetPerMonth, { compact: true })} / bulan</dd>
           </div>
           <div>
-            Titik impas <span className="num font-semibold text-ink">{rp(b.bepOmzet, { compact: true })}</span> (±{int(b.bepPcs)} pcs)
-          </div>
-        </div>
-      </div>
-      <div className="relative mt-4 h-3 rounded-full bg-line-soft">
-        <div className={`h-3 rounded-full ${tone}`} style={{ width: `${(p / 1.2) * 100}%` }} />
-        <div className="absolute -top-1 h-5 w-[2px] bg-ink" style={{ left: `${(1 / 1.2) * 100}%` }} title="Titik impas" />
-      </div>
-      <dl className="mt-5 grid grid-cols-2 gap-x-6 gap-y-3 text-[13.5px]">
-        <div>
-          <dt className="text-muted">Biaya tetap rata-rata</dt>
-          <dd className="num font-medium text-ink">{rp(b.fixedPerMonth)} / bulan</dd>
-        </div>
-        <div>
-          <dt className="text-muted">Margin kontribusi</dt>
-          <dd className="num font-medium text-ink">{pct(b.contributionPct)} dari omzet</dd>
-        </div>
-        {b.plannedFixed && (
-          <div className="col-span-2 rounded-xl bg-gold-soft px-4 py-3">
-            <dt className="text-[13px] font-medium text-[#7a5c2b]">Rencana biaya tetap {rp(b.plannedFixed, { compact: true })}/bulan</dt>
-            <dd className="num mt-0.5 text-ink">
-              Titik impas <b>{rp(b.plannedBepOmzet, { compact: true })}</b> · <b>±{int(b.plannedBepPcs)} pcs</b>/bulan
+            <dt className="text-muted">Titik impas</dt>
+            <dd className="num font-semibold text-ink">
+              {rp(b.bepOmzet, { compact: true })} <span className="font-normal text-muted">(±{int(b.bepPcs)} pcs)</span>
             </dd>
           </div>
-        )}
-      </dl>
+          <div>
+            <dt className="text-muted">Biaya tetap rata-rata</dt>
+            <dd className="num font-medium text-ink">{rp(b.fixedPerMonth)} / bulan</dd>
+          </div>
+          <div>
+            <dt className="text-muted">Margin kontribusi</dt>
+            <dd className="num font-medium text-ink">{pct(b.contributionPct)} dari omzet</dd>
+          </div>
+        </dl>
+      </div>
+      {b.plannedFixed && (
+        <div className="mt-4 rounded-2xl bg-gold-soft px-4 py-3">
+          <div className="text-[13px] font-medium text-[#7a5c2b]">Rencana biaya tetap {rp(b.plannedFixed, { compact: true })}/bulan</div>
+          <div className="num mt-0.5 text-[13.5px] text-ink">
+            Titik impas <b>{rp(b.plannedBepOmzet, { compact: true })}</b> · <b>±{int(b.plannedBepPcs)} pcs</b>/bulan
+          </div>
+        </div>
+      )}
     </div>
+  )
+}
+
+function StockPulse({ data }: { data: DashboardData }) {
+  const months = data.period.activeMonths || 1
+  const rows = data.stockByModel.filter((s) => s.onHand > 0 || s.soldNet > 0)
+  return (
+    <Card title="Stok per model" subtitle="Terjual dibanding total yang pernah masuk" padded={false}>
+      <Table
+        head={
+          <tr>
+            <th className={th}>Model</th>
+            <th className={`${th} text-right`}>Terjual</th>
+            <th className={`${th} text-right`}>Sisa</th>
+            <th className={`${th} w-[30%]`}>Terjual dari total</th>
+            <th className={th}>Status</th>
+          </tr>
+        }
+      >
+        {rows.map((s) => {
+          const sold = Math.max(0, s.soldNet)
+          const left = Math.max(0, s.onHand)
+          const share = sold + left > 0 ? sold / (sold + left) : 0
+          const cover = sold > 0 ? left / (sold / months) : Infinity
+          const [tone, label] =
+            s.onHand <= 0 ? (['bad', 'Habis'] as const) : sold <= 0 ? (['warn', 'Belum laku'] as const) : cover < 1 ? (['warn', 'Menipis'] as const) : cover > 6 ? (['neutral', 'Lambat'] as const) : (['good', 'Aman'] as const)
+          return (
+            <tr key={s.code}>
+              <td className={td}>
+                <div className="flex items-center gap-3">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gold-soft text-[11px] font-semibold text-[#7a5c2b]">{s.code.replace(/^GL-?/, '')}</span>
+                  <div className="min-w-0">
+                    <div className="truncate font-medium text-ink">{s.name}</div>
+                    <div className="text-[12px] text-muted">{s.code}{s.inTransit > 0 ? ` · ${int(s.inTransit)} pcs dalam perjalanan` : ''}</div>
+                  </div>
+                </div>
+              </td>
+              <td className={tdNum}>{int(sold)}</td>
+              <td className={`${tdNum} font-medium`}>{int(s.onHand)}</td>
+              <td className={td}>
+                <div className="flex items-center gap-2.5">
+                  <div className="h-2 flex-1 rounded-full bg-line-soft">
+                    <div className="h-2 rounded-full bg-navy" style={{ width: `${share * 100}%` }} />
+                  </div>
+                  <span className="num w-9 text-right text-[12.5px] text-ink-2">{pct(share, 0)}</span>
+                </div>
+              </td>
+              <td className={td}>
+                <Badge tone={tone}>{label}</Badge>
+              </td>
+            </tr>
+          )
+        })}
+      </Table>
+    </Card>
   )
 }
 

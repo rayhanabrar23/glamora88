@@ -27,7 +27,7 @@ export default function Login({ onSuccess }: { onSuccess: () => void }) {
           <img src="/logo.png" alt="Glamora88" className="mx-auto h-[150px] w-auto" />
           <p className="mt-4 text-[13px] tracking-[0.18em] text-muted uppercase">Portal Bisnis</p>
         </div>
-        <form onSubmit={submit} className="rounded-2xl border border-line bg-surface p-7 shadow-[0_8px_30px_rgba(27,35,51,0.06)]">
+        <form onSubmit={submit} className="glass page-in rounded-3xl p-7">
           <label className="block">
             <span className="mb-1.5 flex items-center gap-2 text-[13px] font-medium text-ink-2">
               <Icon name="lock" size={14} /> Kata sandi tim

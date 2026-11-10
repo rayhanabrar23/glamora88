@@ -34,7 +34,7 @@ export default function App() {
   return (
     <ToastProvider>
       {auth === 'checking' ? (
-        <div className="flex h-full items-center justify-center">
+        <div className="mx-auto max-w-[1320px] px-6 py-10">
           <Loading />
         </div>
       ) : auth === 'out' ? (

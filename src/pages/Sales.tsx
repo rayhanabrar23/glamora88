@@ -129,7 +129,7 @@ function SalesList({ onEdit, refs }: { onEdit: (s: Sale) => void; refs: ReturnTy
           </Field>
         </div>
         {!data ? (
-          <Loading />
+          <div className="p-5"><Loading /></div>
         ) : !rows.length ? (
           <div className="p-5">
             <Empty title="Belum ada penjualan" />

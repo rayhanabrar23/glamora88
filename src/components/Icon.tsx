@@ -27,6 +27,10 @@ const P: Record<string, string> = {
   live: 'M23 7l-7 5 7 5zM1 5h15v14H1z',
   stock: 'M3 3v18h18M7 16v-5M12 16V8M17 16v-9',
   lock: 'M5 11h14v10H5zM8 11V7a4 4 0 0 1 8 0v4',
+  bell: 'M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 0 1-3.46 0',
+  arrow: 'M5 12h14M13 6l6 6-6 6',
+  calendar: 'M3 5h18v16H3zM3 10h18M8 3v4M16 3v4',
+  coins: 'M9 14a6 6 0 1 0 0-12 6 6 0 0 0 0 12zM15.5 9.2a6 6 0 1 1-6.3 6.3M7 6h2v4',
 }
 
 export function Icon({ name, size = 18, className = '' }: { name: keyof typeof P | string; size?: number; className?: string }) {
