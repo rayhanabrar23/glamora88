@@ -1,9 +1,10 @@
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
 import { PURCHASE_STATUSES, type Purchase, type PurchaseItem } from '../../shared/types'
 import { api } from '../lib/api'
 import { dateLabel, int, rp, today } from '../lib/format'
 import { useRefs } from '../lib/refs'
 import { useData } from '../lib/useData'
+import { Icon } from '../components/Icon'
 import {
   Badge,
   Button,
@@ -112,43 +113,100 @@ export default function Purchases() {
                 </div>
               }
             >
-              <div className="grid gap-4 lg:grid-cols-[220px_1fr]">
-                <dl className="grid grid-cols-2 gap-3 text-[13.5px] lg:grid-cols-1">
-                  <div>
-                    <dt className="text-muted">Isi batch</dt>
-                    <dd className="num font-semibold text-ink">{int(c.qty)} pcs</dd>
+              <dl className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+                {[
+                  ['Isi batch', `${int(c.qty)} pcs`],
+                  ['Total biaya', rp(c.total)],
+                  ['Landed cost rata-rata', `${rp(c.perPcs)} / pcs`],
+                  ['Kurs · cargo + lain', `Rp${int(p.exchange_rate)} · ${rp(c.overhead, { compact: true })}`],
+                ].map(([k, v]) => (
+                  <div key={k} className="rounded-2xl bg-canvas/70 px-4 py-3">
+                    <dt className="text-[12.5px] text-muted">{k}</dt>
+                    <dd className="num mt-0.5 text-[15px] font-semibold text-ink">{v}</dd>
                   </div>
-                  <div>
-                    <dt className="text-muted">Total biaya</dt>
-                    <dd className="num font-semibold text-ink">{rp(c.total)}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-muted">Landed cost rata-rata</dt>
-                    <dd className="num font-semibold text-ink">{rp(c.perPcs)} / pcs</dd>
-                  </div>
-                  <div>
-                    <dt className="text-muted">Kurs · cargo + lain</dt>
-                    <dd className="num text-ink">
-                      Rp{int(p.exchange_rate)} · {rp(c.overhead, { compact: true })}
-                    </dd>
-                  </div>
-                </dl>
-                <div className="flex flex-wrap content-start gap-2">
-                  {itemsOf(p.id).map((i) => (
-                    <span key={i.id} className="rounded-lg border border-line-soft bg-canvas/60 px-2.5 py-1 text-[12.5px]">
-                      <span className="font-medium text-ink">{refs.variantLabel(i.sku)}</span>
-                      <span className="num text-muted"> · {i.qty} pcs{i.price_cny != null ? ` · ¥${i.price_cny}` : ''}</span>
-                    </span>
-                  ))}
-                  {p.notes && <p className="mt-1 w-full text-[13px] text-muted">{p.notes}</p>}
-                </div>
-              </div>
+                ))}
+              </dl>
+              <BatchItems p={p} items={itemsOf(p.id)} overheadPerPcs={c.qty ? c.overhead / c.qty : 0} fallback={fallback} refs={refs} />
+              {p.notes && <p className="mt-3 rounded-2xl bg-canvas/70 px-4 py-3 text-[13px] leading-relaxed text-ink-2">{p.notes}</p>}
             </Card>
           ))}
         </div>
       )}
       {form && <PurchaseForm initial={form} refs={refs} fallback={fallback} onClose={() => setForm(null)} onSaved={reload} />}
     </>
+  )
+}
+
+function BatchItems({ p, items, overheadPerPcs, fallback, refs }: { p: Purchase; items: PurchaseItem[]; overheadPerPcs: number; fallback: number; refs: ReturnType<typeof useRefs> }) {
+  const [open, setOpen] = useState(true)
+  const variantOf = new Map(refs.variants.map((v) => [v.sku, v]))
+  const nameOf = new Map(refs.products.map((x) => [x.code, x.name]))
+  const rate = Number(p.exchange_rate) || 0
+  // landed cost per pcs = harga beli × kurs + (cargo + biaya lain) dibagi rata; tanpa harga beli memakai nilai cadangan
+  const landed = (i: PurchaseItem) => (i.price_cny == null ? fallback : i.price_cny * rate + overheadPerPcs)
+  const groups = new Map<string, PurchaseItem[]>()
+  for (const i of [...items].sort((a, b) => a.sku.localeCompare(b.sku))) {
+    const code = variantOf.get(i.sku)?.product_code ?? '—'
+    groups.set(code, [...(groups.get(code) ?? []), i])
+  }
+  const qty = (rows: PurchaseItem[]) => rows.reduce((a, i) => a + i.qty, 0)
+  const total = (rows: PurchaseItem[]) => rows.reduce((a, i) => a + i.qty * landed(i), 0)
+  return (
+    <div className="mt-4 overflow-hidden rounded-2xl border border-line-soft">
+      <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open} className="flex w-full items-center justify-between gap-3 bg-canvas/70 px-4 py-2.5 text-left text-[13.5px] font-semibold text-ink hover:bg-gold-soft/50">
+        <span>
+          Rincian per SKU <span className="num font-normal text-muted">· {groups.size} model · {items.length} SKU</span>
+        </span>
+        <Icon name="chevron" size={16} className={`text-muted transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <Table
+          head={
+            <tr>
+              <th className={th}>SKU</th>
+              <th className={th}>Warna</th>
+              <th className={`${th} text-right`}>Qty</th>
+              <th className={`${th} text-right`}>Harga beli (¥)</th>
+              <th className={`${th} text-right`}>Harga beli (Rp)</th>
+              <th className={`${th} text-right`}>Landed cost / pcs</th>
+              <th className={`${th} text-right`}>Subtotal</th>
+            </tr>
+          }
+          footer={
+            <tr>
+              <td className={td} colSpan={2}>Total batch</td>
+              <td className={tdNum}>{int(qty(items))}</td>
+              <td className={td} colSpan={3} />
+              <td className={tdNum}>{rp(total(items))}</td>
+            </tr>
+          }
+        >
+          {[...groups.entries()].map(([code, rows]) => (
+            <Fragment key={code}>
+              <tr className="bg-gold-soft/45 hover:!bg-gold-soft/45">
+                <td className={`${td} font-semibold text-ink`} colSpan={2}>
+                  {code} · {nameOf.get(code) ?? 'Belum dipetakan'}
+                </td>
+                <td className={`${tdNum} font-semibold`}>{int(qty(rows))}</td>
+                <td className={td} colSpan={3} />
+                <td className={`${tdNum} font-semibold`}>{rp(total(rows))}</td>
+              </tr>
+              {rows.map((i) => (
+                <tr key={i.id}>
+                  <td className={`${td} num text-[13px] text-ink-2`}>{i.sku}</td>
+                  <td className={td}>{variantOf.get(i.sku)?.color ?? '—'}</td>
+                  <td className={tdNum}>{int(i.qty)}</td>
+                  <td className={tdNum}>{i.price_cny == null ? '—' : `¥${i.price_cny.toLocaleString('id-ID', { maximumFractionDigits: 2 })}`}</td>
+                  <td className={tdNum}>{i.price_cny == null ? '—' : rp(i.price_cny * rate)}</td>
+                  <td className={tdNum}>{rp(landed(i))}</td>
+                  <td className={tdNum}>{rp(i.qty * landed(i))}</td>
+                </tr>
+              ))}
+            </Fragment>
+          ))}
+        </Table>
+      )}
+    </div>
   )
 }
 
