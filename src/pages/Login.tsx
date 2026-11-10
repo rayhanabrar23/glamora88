@@ -25,7 +25,7 @@ export default function Login({ onSuccess }: { onSuccess: () => void }) {
       <div className="w-full max-w-[400px]">
         <div className="mb-8 text-center">
           <img src="/logo.png" alt="Glamora88" className="mx-auto h-[150px] w-auto" />
-          <p className="mt-4 text-[13px] tracking-[0.18em] text-muted uppercase">Portal Bisnis</p>
+          <p className="mt-4 text-[13px] tracking-[0.18em] text-white/60 uppercase">Portal Bisnis</p>
         </div>
         <form onSubmit={submit} className="glass page-in rounded-3xl p-7">
           <label className="block">
@@ -39,7 +39,7 @@ export default function Login({ onSuccess }: { onSuccess: () => void }) {
             {busy ? 'Memeriksa…' : 'Masuk'}
           </Button>
         </form>
-        <p className="mt-6 text-center text-[12.5px] text-muted">Hanya untuk tim internal Glamora88.</p>
+        <p className="mt-6 text-center text-[12.5px] text-white/50">Hanya untuk tim internal Glamora88.</p>
       </div>
     </div>
   )

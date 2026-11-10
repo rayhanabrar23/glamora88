@@ -50,7 +50,7 @@ function Brand() {
 
 function Rail({ onLogout }: { onLogout: () => void }) {
   const tip =
-    'pointer-events-none absolute left-full z-50 ml-3 translate-x-[-4px] rounded-lg bg-ink px-2.5 py-1.5 text-[12.5px] font-medium whitespace-nowrap text-white opacity-0 shadow-lg transition-all duration-150 group-hover:translate-x-0 group-hover:opacity-100 group-focus-visible:opacity-100'
+    'pointer-events-none absolute left-full z-50 ml-3 translate-x-[-4px] rounded-lg bg-white px-2.5 py-1.5 text-[12.5px] font-semibold whitespace-nowrap text-navy opacity-0 shadow-[0_10px_24px_-8px_rgba(0,0,0,0.6)] transition-all duration-150 group-hover:translate-x-0 group-hover:opacity-100 group-focus-visible:opacity-100'
   return (
     <aside className="rail fixed top-1/2 left-5 z-40 hidden -translate-y-1/2 flex-col items-center gap-1 rounded-[26px] p-2.5 lg:flex">
       {NAV.map((n) => (
@@ -121,7 +121,7 @@ function QuickSearch() {
         onKeyDown={(e) => e.key === 'Enter' && hits[0] && go(hits[0].to)}
         placeholder="Cari menu…"
         aria-label="Cari menu"
-        className="h-10 w-full rounded-full border border-white/80 bg-white/60 pr-14 pl-10 text-[14px] text-ink outline-none transition-all placeholder:text-muted/80 focus:border-gold focus:bg-white focus:ring-2 focus:ring-gold-soft"
+        className="h-10 w-full rounded-full border border-line bg-white pr-14 pl-10 text-[14px] text-ink outline-none transition-all placeholder:text-muted/80 focus:border-gold focus:bg-white focus:ring-2 focus:ring-gold-soft"
       />
       <kbd className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 rounded-md border border-line bg-white/80 px-1.5 py-0.5 text-[10.5px] font-medium text-muted">Ctrl K</kbd>
       {open && (
@@ -163,7 +163,7 @@ function Notifications() {
         onClick={() => setOpen((o) => !o)}
         aria-label={`Catatan (${need.length} perlu perhatian)`}
         aria-expanded={open}
-        className={cx('relative flex h-10 w-10 items-center justify-center rounded-full border border-white/80 text-ink-2 transition-colors hover:bg-white hover:text-navy', open ? 'bg-white text-navy' : 'bg-white/60')}
+        className={cx('relative flex h-10 w-10 items-center justify-center rounded-full border border-line bg-white text-ink-2 transition-colors hover:bg-white hover:text-navy', open ? 'border-gold text-navy' : '')}
       >
         <Icon name="bell" size={18} />
         {need.length > 0 && (
@@ -229,20 +229,20 @@ export function Layout({ children, onLogout }: { children: ReactNode; onLogout: 
           <div className="flex flex-1 justify-center">
             <QuickSearch />
           </div>
-          <div className="hidden items-center gap-2 rounded-full border border-white/80 bg-white/60 px-3.5 py-2 text-[13px] font-medium text-ink-2 xl:flex">
+          <div className="hidden items-center gap-2 rounded-full border border-line bg-white px-3.5 py-2 text-[13px] font-medium text-ink-2 xl:flex">
             <Icon name="calendar" size={15} className="text-gold" />
             {today}
           </div>
           <Notifications />
-          <button className="flex h-10 w-10 items-center justify-center rounded-full border border-white/80 bg-white/60 text-ink-2 hover:bg-white lg:hidden" onClick={() => setOpen(true)} aria-label="Buka menu">
+          <button className="flex h-10 w-10 items-center justify-center rounded-full border border-line bg-white text-ink-2 hover:bg-white lg:hidden" onClick={() => setOpen(true)} aria-label="Buka menu">
             <Icon name="menu" size={20} />
           </button>
         </div>
       </header>
 
       {open && (
-        <div className="fixed inset-0 z-50 bg-ink/35 backdrop-blur-[3px] lg:hidden" onClick={() => setOpen(false)}>
-          <div className="rail pop-in m-3 flex h-[calc(100%-1.5rem)] w-[270px] origin-left flex-col rounded-[26px] p-3" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 bg-[#0b1020]/65 backdrop-blur-[3px] lg:hidden" onClick={() => setOpen(false)}>
+          <div className="drawer pop-in m-3 flex h-[calc(100%-1.5rem)] w-[270px] origin-left flex-col rounded-[26px] p-3" onClick={(e) => e.stopPropagation()}>
             <div className="px-3 pt-2 pb-3 text-[13px] font-semibold tracking-[0.14em] text-white/70 uppercase">Menu</div>
             <nav className="flex flex-col gap-1 overflow-y-auto">
               {NAV.map((n) => (

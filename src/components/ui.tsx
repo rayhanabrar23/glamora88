@@ -9,8 +9,8 @@ export function PageHeader({ title, subtitle, actions }: { title: string; subtit
   return (
     <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
       <div>
-        <h1 className="text-[28px] font-semibold tracking-tight text-ink">{title}</h1>
-        {subtitle && <p className="mt-1 max-w-2xl text-[15px] leading-relaxed text-muted">{subtitle}</p>}
+        <h1 className="text-[28px] font-semibold tracking-tight text-white">{title}</h1>
+        {subtitle && <p className="mt-1 max-w-2xl text-[15px] leading-relaxed text-white/65">{subtitle}</p>}
       </div>
       {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
     </div>
@@ -69,10 +69,10 @@ export function Button({
   ...rest
 }: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: BtnVariant; icon?: string }) {
   const styles: Record<BtnVariant, string> = {
-    primary: 'bg-navy text-white hover:bg-navy-2 border-navy shadow-[0_8px_18px_-8px_rgba(31,42,68,0.6)]',
-    secondary: 'bg-white/75 text-ink border-white hover:border-gold hover:text-navy shadow-[0_2px_8px_-4px_rgba(31,42,68,0.2)]',
-    ghost: 'bg-transparent text-ink-2 border-transparent hover:bg-white/70',
-    danger: 'bg-white/75 text-bad border-white hover:border-bad hover:bg-bad-soft',
+    primary: 'btn-gold text-navy font-semibold border-transparent',
+    secondary: 'bg-white text-ink border-line hover:border-gold hover:text-navy',
+    ghost: 'bg-transparent text-ink-2 border-transparent hover:bg-line-soft',
+    danger: 'bg-white text-bad border-line hover:border-bad hover:bg-bad-soft',
   }
   return (
     <button
@@ -117,7 +117,7 @@ export function Field({ label, hint, children, className }: { label: string; hin
 }
 
 const inputCls =
-  'h-10 w-full rounded-xl border border-line bg-white/80 px-3 text-[14px] text-ink outline-none transition-colors placeholder:text-muted/70 focus:border-gold focus:bg-white focus:ring-2 focus:ring-gold-soft'
+  'h-10 w-full rounded-xl border border-line bg-white px-3 text-[14px] text-ink outline-none transition-colors placeholder:text-muted/70 focus:border-gold focus:bg-white focus:ring-2 focus:ring-gold-soft'
 export function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
   return <input {...props} className={cx(inputCls, props.className)} />
 }
@@ -151,7 +151,7 @@ const badgeTone = {
   gold: 'bg-gold-soft text-[#7a5c2b]',
 }
 export function Badge({ tone = 'neutral', children }: { tone?: keyof typeof badgeTone; children: ReactNode }) {
-  return <span className={cx('inline-flex items-center rounded-full px-2.5 py-0.5 text-[12px] font-medium', badgeTone[tone])}>{children}</span>
+  return <span className={cx('inline-flex items-center rounded-full px-2.5 py-0.5 text-[12px] font-medium whitespace-nowrap', badgeTone[tone])}>{children}</span>
 }
 
 export function Modal({ open, title, onClose, children, footer, wide }: {
@@ -170,7 +170,7 @@ export function Modal({ open, title, onClose, children, footer, wide }: {
   }, [open, onClose])
   if (!open) return null
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-ink/35 p-4 backdrop-blur-[4px] sm:p-10" onMouseDown={onClose}>
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-[#0b1020]/65 p-4 backdrop-blur-[4px] sm:p-10" onMouseDown={onClose}>
       <div
         role="dialog"
         aria-modal="true"
@@ -192,7 +192,7 @@ export function Modal({ open, title, onClose, children, footer, wide }: {
 
 export function Empty({ title, children }: { title: string; children?: ReactNode }) {
   return (
-    <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-line bg-white/40 px-6 py-12 text-center">
+    <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-line bg-[#fcfaf6] px-6 py-12 text-center">
       <div className="text-[15px] font-medium text-ink">{title}</div>
       {children && <div className="mt-1 max-w-md text-[14px] text-muted">{children}</div>}
     </div>
@@ -234,7 +234,7 @@ export const tdNum = 'num px-3 py-3 text-right whitespace-nowrap first:pl-6 last
 
 export function Tabs<T extends string>({ value, onChange, items }: { value: T; onChange: (v: T) => void; items: { value: T; label: string }[] }) {
   return (
-    <div className="inline-flex rounded-full border border-white bg-white/70 p-1 shadow-[0_2px_8px_-4px_rgba(31,42,68,0.2)]">
+    <div className="inline-flex rounded-full border border-line bg-white p-1">
       {items.map((it) => (
         <button
           key={it.value}

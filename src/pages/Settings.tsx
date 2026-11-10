@@ -223,7 +223,7 @@ function DataTools() {
           <div className="font-medium text-ink">Impor data</div>
           <label className="mt-3 inline-block">
             <input type="file" accept=".json" className="hidden" onChange={(e) => e.target.files?.[0] && importFile(e.target.files[0])} disabled={busy} />
-            <span className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-xl border border-navy bg-navy px-3.5 text-[14px] font-medium text-white hover:bg-navy-2">
+            <span className="inline-flex h-9 cursor-pointer items-center gap-2 btn-gold rounded-full border border-transparent px-4 text-[14px] font-semibold text-navy">
               {busy ? 'Mengimpor…' : 'Pilih file .json'}
             </span>
           </label>

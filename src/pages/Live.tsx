@@ -55,11 +55,11 @@ export default function Live() {
         title="Sesi Live"
         actions={
           <>
-            <label className="text-[12px] text-muted">
+            <label className="text-[12px] text-white/65">
               Dari
               <Input type="month" value={from} onChange={(e) => setFrom(e.target.value)} className="mt-1 h-9 w-[150px]" />
             </label>
-            <label className="text-[12px] text-muted">
+            <label className="text-[12px] text-white/65">
               Sampai
               <Input type="month" value={to} onChange={(e) => setTo(e.target.value)} className="mt-1 h-9 w-[150px]" />
             </label>

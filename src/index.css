@@ -34,13 +34,15 @@
 }
 
 html, body, #root { height: 100%; }
+html { background: #131a30; }
 body {
   margin: 0;
-  background-color: var(--color-canvas);
+  /* latar navy gelap; --color-canvas tetap krem untuk isian halus di dalam kartu */
+  background-color: #131a30;
   background-image:
-    radial-gradient(900px 520px at 8% -8%, rgba(176, 141, 87, 0.22), transparent 62%),
-    radial-gradient(760px 520px at 102% 4%, rgba(47, 60, 92, 0.16), transparent 60%),
-    radial-gradient(900px 620px at 55% 112%, rgba(176, 141, 87, 0.16), transparent 62%);
+    radial-gradient(900px 560px at 6% -10%, rgba(176, 141, 87, 0.3), transparent 62%),
+    radial-gradient(820px 560px at 104% 2%, rgba(74, 92, 140, 0.55), transparent 60%),
+    radial-gradient(900px 620px at 55% 115%, rgba(176, 141, 87, 0.2), transparent 62%);
   background-attachment: fixed;
   color: var(--color-ink);
   font-family: var(--font-sans);
@@ -53,11 +55,9 @@ input, select, textarea, button { font: inherit; }
 
 /* ---------- permukaan kaca ---------- */
 .glass {
-  background: rgba(255, 255, 255, 0.72);
-  border: 1px solid rgba(255, 255, 255, 0.85);
-  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.9) inset, 0 10px 34px -12px rgba(31, 42, 68, 0.16), 0 2px 6px rgba(31, 42, 68, 0.04);
-  -webkit-backdrop-filter: blur(18px) saturate(1.4);
-  backdrop-filter: blur(18px) saturate(1.4);
+  background: #fcfaf6;
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  box-shadow: 0 1px 0 #fff inset, 0 18px 44px -18px rgba(0, 0, 0, 0.55), 0 2px 6px rgba(0, 0, 0, 0.12);
 }
 .glass-strong {
   background: #fffdfa;
@@ -65,19 +65,30 @@ input, select, textarea, button { font: inherit; }
   box-shadow: 0 24px 60px -18px rgba(31, 42, 68, 0.3), 0 4px 12px rgba(31, 42, 68, 0.06);
 }
 .lift { transition: transform 0.25s cubic-bezier(0.2, 0.7, 0.2, 1), box-shadow 0.25s; }
-.lift:hover { transform: translateY(-3px); box-shadow: 0 1px 0 rgba(255, 255, 255, 0.9) inset, 0 18px 40px -14px rgba(31, 42, 68, 0.24), 0 2px 6px rgba(31, 42, 68, 0.05); }
+.lift:hover { transform: translateY(-3px); box-shadow: 0 1px 0 #fff inset, 0 26px 50px -18px rgba(0, 0, 0, 0.65), 0 2px 6px rgba(0, 0, 0, 0.14); }
 
 .rail {
+  background: linear-gradient(170deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.07));
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.16) inset, 0 22px 44px -14px rgba(0, 0, 0, 0.6);
+  -webkit-backdrop-filter: blur(18px);
+  backdrop-filter: blur(18px);
+}
+.drawer {
   background: linear-gradient(170deg, #2f3c5c 0%, #1f2a44 55%, #18213a 100%);
-  box-shadow: 0 22px 44px -14px rgba(31, 42, 68, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.06) inset;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.12) inset, 0 22px 44px -14px rgba(0, 0, 0, 0.6);
 }
 .hero {
   background:
-    radial-gradient(420px 260px at 92% -10%, rgba(176, 141, 87, 0.5), transparent 65%),
-    radial-gradient(360px 260px at -5% 115%, rgba(74, 92, 140, 0.55), transparent 65%),
-    linear-gradient(140deg, #24304e 0%, #1b2440 60%, #151c33 100%);
-  box-shadow: 0 24px 50px -18px rgba(31, 42, 68, 0.6);
+    radial-gradient(420px 260px at 92% -10%, rgba(176, 141, 87, 0.6), transparent 65%),
+    radial-gradient(360px 260px at -5% 115%, rgba(74, 92, 140, 0.7), transparent 65%),
+    linear-gradient(140deg, #2c3a5e 0%, #222d4d 60%, #1b2440 100%);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.13) inset, 0 24px 50px -18px rgba(0, 0, 0, 0.7);
 }
+.btn-gold {
+  background: linear-gradient(180deg, #ecd9ae 0%, #c9a567 100%);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.6) inset, 0 8px 18px -8px rgba(176, 141, 87, 0.75);
+}
+.btn-gold:hover:not(:disabled) { background: linear-gradient(180deg, #f3e3bf 0%, #d3b077 100%); }
 
 /* ---------- gerak ---------- */
 @keyframes page-in { from { opacity: 0; transform: translateY(10px); filter: blur(6px); } to { opacity: 1; transform: none; filter: none; } }
@@ -94,7 +105,7 @@ input, select, textarea, button { font: inherit; }
 .stagger > *:nth-child(6) { animation-delay: 0.25s; }
 .skeleton {
   border-radius: 14px;
-  background: linear-gradient(90deg, rgba(255, 255, 255, 0.55) 25%, rgba(255, 255, 255, 0.95) 50%, rgba(255, 255, 255, 0.55) 75%);
+  background: linear-gradient(90deg, rgba(150, 160, 185, 0.16) 25%, rgba(150, 160, 185, 0.34) 50%, rgba(150, 160, 185, 0.16) 75%);
   background-size: 200% 100%;
   animation: shimmer 1.4s linear infinite;
 }

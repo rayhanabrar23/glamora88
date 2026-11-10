@@ -59,9 +59,9 @@ export default function Dashboard() {
     <div className={loading ? 'opacity-70 transition-opacity' : ''}>
       <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <div className="text-[12px] font-semibold tracking-[0.16em] text-gold uppercase">Ringkasan Kinerja</div>
-          <h1 className="mt-1 text-[30px] leading-tight font-semibold tracking-tight text-ink">{greet}, tim Glamora</h1>
-          <p className="mt-1 text-[14.5px] text-muted">
+          <div className="text-[12px] font-semibold tracking-[0.16em] text-[#d9bd86] uppercase">Ringkasan Kinerja</div>
+          <h1 className="mt-1 text-[30px] leading-tight font-semibold tracking-tight text-white">{greet}, tim Glamora</h1>
+          <p className="mt-1 text-[14.5px] text-white/65">
             {periodText} · {data.period.months} bulan{store ? ` · ${store}` : ''}
           </p>
         </div>
@@ -109,7 +109,7 @@ export default function Dashboard() {
               <Callout tone="good" title="Tidak ada catatan" />
             )}
           </div>
-          <Link to="/proyeksi" className="mt-4 flex h-11 items-center justify-center gap-2 rounded-full bg-navy text-[14px] font-semibold text-white shadow-[0_10px_22px_-10px_rgba(31,42,68,0.7)] transition-colors hover:bg-navy-2">
+          <Link to="/proyeksi" className="mt-4 flex h-11 items-center justify-center gap-2 btn-gold rounded-full text-[14px] font-semibold text-navy">
             Buka proyeksi kas <Icon name="arrow" size={15} />
           </Link>
         </Card>

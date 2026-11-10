@@ -60,7 +60,7 @@ export default function Reports() {
         </div>
       </Card>
 
-      <div className="mt-4 flex flex-col gap-4 rounded-2xl border border-gold/40 bg-gold-soft/60 p-5 sm:flex-row sm:items-center sm:justify-between">
+      <div className="mt-4 flex flex-col gap-4 rounded-3xl border border-gold/40 bg-gold-soft p-5 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-start gap-3">
           <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-navy text-[#d8b878]">
             <Icon name="download" size={20} />
