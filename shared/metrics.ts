@@ -84,7 +84,11 @@ export function skuCostMap(b: DataBundle): Map<string, SkuCost> {
     const a = acc.get(sku)
     const cat = catOf.get(prodOf.get(sku) ?? '') ?? 'Tas'
     if (a && a.qty > 0) out.set(sku, { landed: a.cost / a.qty, tracked: true })
-    else out.set(sku, { landed: cat === 'Kemasan' ? 0 : fallback, tracked: cat !== 'Kemasan' })
+    else {
+      // kemasan & aksesori lepasan tanpa catatan pembelian: modal Rp0 (sudah termasuk di produk induknya), stok tidak dilacak
+      const free = cat === 'Kemasan' || cat === 'Aksesoris'
+      out.set(sku, { landed: free ? 0 : fallback, tracked: !free })
+    }
   }
   return out
 }

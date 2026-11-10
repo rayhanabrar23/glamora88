@@ -121,7 +121,7 @@ export default function Products() {
             const sold = sum('soldNet')
             const last = rows.map((r) => r.lastSale).filter(Boolean).sort().pop() ?? null
             const isOpen = open[p.code]
-            const trackedP = p.category !== 'Kemasan'
+            const trackedP = rows.some((r) => r.tracked)
             return (
               <Fragment key={p.code}>
                 <tr className="cursor-pointer" onClick={() => setOpen((o) => ({ ...o, [p.code]: !o[p.code] }))}>
