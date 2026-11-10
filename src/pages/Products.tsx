@@ -29,6 +29,7 @@ import {
   useToast,
 } from '../components/ui'
 import { Icon } from '../components/Icon'
+import RestockPlan from './RestockPlan'
 
 export default function Products() {
   const refs = useRefs()
@@ -37,7 +38,7 @@ export default function Products() {
   const [prodForm, setProdForm] = useState<Partial<Product> | null>(null)
   const [varForm, setVarForm] = useState<Partial<Variant> | null>(null)
   const [opname, setOpname] = useState(false)
-  const [view, setView] = useState<'stok' | 'harga'>('stok')
+  const [view, setView] = useState<'stok' | 'harga' | 'restock'>('stok')
   const [priceFor, setPriceFor] = useState<{ title: string; skus: string[] } | null>(null)
   const toast = useToast()
 
@@ -109,9 +110,11 @@ export default function Products() {
           items={[
             { value: 'stok', label: 'Stok' },
             { value: 'harga', label: 'Daftar harga' },
+            { value: 'restock', label: 'Rencana restock' },
           ]}
         />
       </div>
+      {view === 'restock' && <RestockPlan />}
       {view === 'harga' && <PriceList products={refs.products} byProduct={byProduct} open={open} setOpen={setOpen} onEdit={(title, skus) => setPriceFor({ title, skus })} />}
       {view === 'stok' && <Card padded={false}>
         <Table

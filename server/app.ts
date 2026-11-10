@@ -1,3 +1,4 @@
+import { computeRestock, DEFAULT_RESTOCK, type RestockParams } from '../shared/restock'
 import { Hono } from 'hono'
 import { checkPassword, clearSessionCookie, isAuthenticated, makeSessionCookie } from './auth'
 import { ensureSchema, getSettings, num, runBatched, type Env } from './db'
@@ -588,6 +589,27 @@ app.get('/projection/base', async (c) => {
     contributionPct: d.kpi.contributionPct,
     saved: s.projection ? JSON.parse(s.projection) : null,
   })
+})
+
+// ---------- Rencana restock ----------
+app.get('/restock', async (c) => {
+  const b = await loadBundle(c.env.DB)
+  const q = c.req.query()
+  const saved = b.settings.restock ? (JSON.parse(b.settings.restock) as Partial<RestockParams>) : {}
+  const pick = (k: 'leadDays' | 'reviewDays' | 'windowDays' | 'deadDays', lo: number, hi: number) => Math.min(hi, Math.max(lo, num(q[k] ?? saved[k], DEFAULT_RESTOCK[k] as number)))
+  const service = num(q.service ?? saved.service, DEFAULT_RESTOCK.service)
+  const target = q.targetMonthly !== undefined ? num(q.targetMonthly, 0) : num(saved.targetMonthly, 0)
+  const params: RestockParams = {
+    leadDays: pick('leadDays', 0, 365),
+    reviewDays: pick('reviewDays', 1, 180),
+    windowDays: pick('windowDays', 7, 730),
+    deadDays: pick('deadDays', 7, 730),
+    service: service >= 0.99 ? 0.99 : service >= 0.95 ? 0.95 : 0.9,
+    targetMonthly: target > 0 ? target : null,
+    safetyMode: (q.safetyMode ?? saved.safetyMode) === 'days' ? 'days' : 'stat',
+    safetyDays: Math.min(365, Math.max(0, num(q.safetyDays ?? saved.safetyDays, DEFAULT_RESTOCK.safetyDays))),
+  }
+  return c.json({ params, ...computeRestock(b, params, new Date().toISOString().slice(0, 10)) })
 })
 
 // ---------- Sesi live ----------
