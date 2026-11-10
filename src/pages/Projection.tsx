@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
-import { addMonths, projectionMonths, runProjection, type CostItem, type OneOff, type Restock, type Scenario } from '../../shared/projection'
+import { addMonths, normalizeScenario, projectionMonths, runProjection, upgradeScenario, type CostItem, type Fund, type OneOff, type Restock, type Scenario } from '../../shared/projection'
 import { api } from '../lib/api'
 import { int, monthLabel, pct, rp, thisMonth } from '../lib/format'
 import { useData } from '../lib/useData'
 import { CashChart } from '../components/charts'
-import { Button, Callout, Card, ErrorBox, Field, IconButton, Input, Loading, PageHeader, Stat, Table, td, tdNum, th, useToast } from '../components/ui'
+import { Button, Callout, Card, ErrorBox, Field, IconButton, Input, Loading, PageHeader, Select, Stat, Table, Tabs, td, tdNum, th, useToast } from '../components/ui'
 
 interface Base {
   avgPrice: number
@@ -53,9 +53,14 @@ function defaultScenario(b: Base): Scenario {
     costs,
     oneOffs: [],
     restocks: [],
+    funds: [],
+    volumeMode: 'flat',
+    volumeFlat: vol,
+    restockMode: 'routine',
+    restockPcs: 0,
+    restockEvery: 1,
   }
-  for (const mm of projectionMonths(s)) s.volume[mm] = vol
-  return s
+  return normalizeScenario(s)
 }
 
 export default function Projection() {
@@ -64,27 +69,34 @@ export default function Projection() {
   const [dirty, setDirty] = useState(false)
   const toast = useToast()
   useEffect(() => {
-    if (base && !s) setS(base.saved ?? defaultScenario(base))
+    if (base && !s) setS(base.saved ? upgradeScenario(base.saved) : defaultScenario(base))
   }, [base, s])
   const result = useMemo(() => (s ? runProjection(s) : null), [s])
   if (error) return <ErrorBox message={error} onRetry={reload} />
   if (!base || !s || !result) return <Loading />
 
   const upd = (patch: Partial<Scenario>) => {
-    setS((x) => {
-      const next = { ...x!, ...patch }
-      // jaga volume tetap ada untuk setiap bulan
-      const vol: Record<string, number> = {}
-      const fill = x!.volume[projectionMonths(x!)[projectionMonths(x!).length - 1]] ?? 0
-      for (const m of projectionMonths(next)) vol[m] = next.volume[m] ?? fill
-      return { ...next, volume: vol }
-    })
+    setS((x) => normalizeScenario({ ...x!, ...patch }))
     setDirty(true)
   }
   const months = projectionMonths(s)
-  const setAllVolume = (v: number) => upd({ volume: Object.fromEntries(months.map((m) => [m, Math.max(0, Math.round(v))])) })
-  const ramp = (fromV: number, toV: number) =>
-    upd({ volume: Object.fromEntries(months.map((m, i) => [m, Math.round(fromV + ((toV - fromV) * i) / Math.max(1, months.length - 1))])) })
+  const first = s.volume[months[0]] ?? 0
+  const lastV = s.volume[months[months.length - 1]] ?? 0
+  const setVolumeMode = (mode: NonNullable<Scenario['volumeMode']>) =>
+    upd(
+      mode === 'flat'
+        ? { volumeMode: mode, volumeFlat: s.volumeFlat ?? first }
+        : mode === 'ramp'
+          ? { volumeMode: mode, rampFrom: s.rampFrom ?? first, rampTo: s.rampTo ?? lastV, rampMonths: s.rampMonths ?? Math.min(6, months.length) }
+          : { volumeMode: mode },
+    )
+  const setRestockMode = (mode: NonNullable<Scenario['restockMode']>) =>
+    // "atur sendiri" berangkat dari jadwal yang sedang tampil supaya tidak mengetik ulang
+    upd(mode === 'manual' ? { restockMode: mode, restocks: s.restocks.map((x) => ({ ...x, id: uid() })) } : { restockMode: mode, restockPcs: s.restockPcs ?? 0, restockEvery: s.restockEvery ?? 1 })
+  const funds = s.funds ?? []
+  const setFund = (id: string, patch: Partial<Fund>) => upd({ funds: funds.map((f) => (f.id === id ? { ...f, ...patch } : f)) })
+  const addFund = (name: string) => upd({ funds: [...funds, { id: uid(), name, amount: 0 }] })
+  const setOneOff = (id: string, patch: Partial<OneOff>) => upd({ oneOffs: s.oneOffs.map((o) => (o.id === id ? { ...o, ...patch } : o)) })
   async function save() {
     await api.put('/settings', { projection: JSON.stringify(s) })
     setDirty(false)
@@ -165,8 +177,8 @@ export default function Projection() {
         </Card>
       </div>
 
-      <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_1.25fr]">
-        <Card title="Asumsi dasar">
+      <div className="mt-4 grid gap-4 lg:grid-cols-2">
+        <Card title="1 · Periode & dana awal" subtitle="Dana yang sudah di tangan saat proyeksi dimulai">
           <div className="grid grid-cols-2 gap-4">
             <Field label="Mulai bulan">
               <Input type="month" value={s.start} onChange={(e) => e.target.value && upd({ start: e.target.value })} />
@@ -174,19 +186,216 @@ export default function Projection() {
             <Field label="Lama proyeksi (bulan)">
               <Input type="number" min={1} max={36} value={s.months} onChange={(e) => upd({ months: Math.min(36, Math.max(1, Number(e.target.value) || 1)) })} />
             </Field>
-            <Field label="Saldo kas awal (Rp)">
-              <Input type="number" value={s.openingCash} onChange={(e) => upd({ openingCash: Number(e.target.value) })} />
+          </div>
+          <div className="mt-5 flex flex-col gap-2">
+            {funds.map((f) => (
+              <div key={f.id} className="grid grid-cols-[1fr_150px_32px] items-end gap-2 sm:grid-cols-[1fr_190px_32px]">
+                <label>
+                  <span className="mb-1 block text-[12px] text-muted">Sumber dana</span>
+                  <Input className="h-9" value={f.name} onChange={(e) => setFund(f.id, { name: e.target.value })} />
+                </label>
+                <label>
+                  <span className="mb-1 block text-[12px] text-muted">Rp · {rp(f.amount, { compact: true })}</span>
+                  <Input className="h-9 text-right" type="number" min={0} value={f.amount} onChange={(e) => setFund(f.id, { amount: Math.abs(Number(e.target.value)) })} />
+                </label>
+                <IconButton icon="trash" label="Hapus" tone="danger" onClick={() => upd({ funds: funds.filter((x) => x.id !== f.id) })} />
+              </div>
+            ))}
+            {!funds.length && <p className="text-[13.5px] text-muted">Belum ada dana awal.</p>}
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {['Kas / laba yang bisa dipakai', 'Tambahan modal owner', 'Dana investor'].map((n) => (
+              <Button key={n} icon="plus" onClick={() => addFund(n)}>
+                {n}
+              </Button>
+            ))}
+          </div>
+          <div className="mt-4 flex items-center justify-between rounded-2xl bg-gold-soft px-4 py-3">
+            <span className="text-[13.5px] font-medium text-[#7a5c2b]">Saldo kas awal</span>
+            <span className="num text-[17px] font-semibold text-ink">{rp(s.openingCash)}</span>
+          </div>
+        </Card>
+
+        <Card
+          title="2 · Volume penjualan"
+          subtitle="Pcs neto per bulan"
+          actions={
+            <Tabs
+              value={s.volumeMode ?? 'manual'}
+              onChange={setVolumeMode}
+              items={[
+                { value: 'flat', label: 'Rata' },
+                { value: 'ramp', label: 'Naik bertahap' },
+                { value: 'manual', label: 'Per bulan' },
+              ]}
+            />
+          }
+        >
+          {s.volumeMode === 'flat' && (
+            <>
+              <Field label="Penjualan tiap bulan (pcs)">
+                <Input type="number" min={0} value={s.volumeFlat ?? 0} onChange={(e) => upd({ volumeFlat: Number(e.target.value) })} />
+              </Field>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Button onClick={() => upd({ volumeFlat: Math.round(base.avgPcsSelling) })}>Rata-rata bulan aktif ({int(base.avgPcsSelling)})</Button>
+                <Button onClick={() => upd({ volumeFlat: base.bestPcs })}>Bulan terbaik ({int(base.bestPcs)})</Button>
+                {bep.pcs && <Button onClick={() => upd({ volumeFlat: Math.ceil(bep.pcs!) })}>Titik impas ({int(bep.pcs)})</Button>}
+              </div>
+            </>
+          )}
+          {s.volumeMode === 'ramp' && (
+            <div className="grid grid-cols-3 gap-3">
+              <Field label="Bulan pertama (pcs)">
+                <Input type="number" min={0} value={s.rampFrom ?? 0} onChange={(e) => upd({ rampFrom: Number(e.target.value) })} />
+              </Field>
+              <Field label="Target (pcs)">
+                <Input type="number" min={0} value={s.rampTo ?? 0} onChange={(e) => upd({ rampTo: Number(e.target.value) })} />
+              </Field>
+              <Field label="Tercapai di bulan ke-">
+                <Input type="number" min={1} max={s.months} value={s.rampMonths ?? 1} onChange={(e) => upd({ rampMonths: Math.min(s.months, Math.max(1, Number(e.target.value) || 1)) })} />
+              </Field>
+            </div>
+          )}
+          {s.volumeMode === 'manual' ? (
+            <div className="grid grid-cols-3 gap-3 sm:grid-cols-4">
+              {months.map((m) => (
+                <Field key={m} label={monthLabel(m)}>
+                  <Input type="number" min={0} className="text-right" value={s.volume[m] ?? 0} onChange={(e) => upd({ volume: { ...s.volume, [m]: Number(e.target.value) } })} />
+                </Field>
+              ))}
+            </div>
+          ) : (
+            <MonthChips months={months} value={(m) => s.volume[m] ?? 0} />
+          )}
+        </Card>
+      </div>
+
+      <div className="mt-4 grid gap-4 lg:grid-cols-2">
+        <Card
+          title="3 · Restock"
+          subtitle={`${int(s.restocks.reduce((a, x) => a + x.pcs, 0))} pcs · ${rp(s.restocks.reduce((a, x) => a + x.pcs * x.costPerPcs, 0), { compact: true })} selama periode`}
+          actions={
+            <Tabs
+              value={s.restockMode ?? 'manual'}
+              onChange={setRestockMode}
+              items={[
+                { value: 'routine', label: 'Rutin' },
+                { value: 'match', label: 'Ikuti penjualan' },
+                { value: 'manual', label: 'Atur sendiri' },
+              ]}
+            />
+          }
+        >
+          {s.restockMode === 'routine' && (
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Pcs tiap restock">
+                <Input type="number" min={0} value={s.restockPcs ?? 0} onChange={(e) => upd({ restockPcs: Number(e.target.value) })} />
+              </Field>
+              <Field label="Restock setiap (bulan)">
+                <Input type="number" min={1} max={12} value={s.restockEvery ?? 1} onChange={(e) => upd({ restockEvery: Math.max(1, Number(e.target.value) || 1) })} />
+              </Field>
+              <Field label="Mulai bulan">
+                <Input type="month" value={s.restockFrom && s.restockFrom > s.start ? s.restockFrom : s.start} onChange={(e) => upd({ restockFrom: e.target.value || undefined })} />
+              </Field>
+              <Field label="Biaya per pcs (Rp)" hint={`HPP: ${rp(s.landedCost)}`}>
+                <Input type="number" min={0} value={s.restockCost ?? s.landedCost} onChange={(e) => upd({ restockCost: Number(e.target.value) })} />
+              </Field>
+            </div>
+          )}
+          {s.restockMode === 'match' && (
+            <Field label="Biaya per pcs (Rp)" hint="Tiap bulan restock sebanyak yang terjual di bulan itu, sehingga stok awal tetap utuh">
+              <Input type="number" min={0} value={s.restockCost ?? s.landedCost} onChange={(e) => upd({ restockCost: Number(e.target.value) })} />
             </Field>
-            <Field label="Stok awal (pcs)" hint={`Dari data: ${int(base.openingStock)} pcs`}>
+          )}
+          {s.restockMode === 'manual' ? (
+            <Rows<Restock>
+              items={s.restocks}
+              onChange={(restocks) => upd({ restocks })}
+              make={() => ({ id: uid(), month: s.start, pcs: 300, costPerPcs: s.landedCost })}
+              fields={[
+                { key: 'month', label: 'Bulan', type: 'month' },
+                { key: 'pcs', label: 'Pcs', type: 'number' },
+                { key: 'costPerPcs', label: 'Biaya/pcs (Rp)', type: 'number' },
+              ]}
+            />
+          ) : (
+            <MonthChips months={months} value={(m) => s.restocks.filter((x) => x.month === m).reduce((a, x) => a + x.pcs, 0)} />
+          )}
+        </Card>
+
+        <Card title="4 · Biaya tetap bulanan" subtitle="Gaji, sewa, listrik, iklan rutin">
+          <Rows<CostItem>
+            items={s.costs}
+            onChange={(costs) => upd({ costs })}
+            make={() => ({ id: uid(), name: 'Biaya baru', amount: 0, from: s.start })}
+            fields={[
+              { key: 'name', label: 'Nama', type: 'text', wide: true },
+              { key: 'amount', label: 'Rp / bulan', type: 'number' },
+              { key: 'from', label: 'Mulai', type: 'month' },
+              { key: 'to', label: 'Selesai (opsional)', type: 'month' },
+            ]}
+          />
+        </Card>
+      </div>
+
+      <div className="mt-4 grid gap-4 lg:grid-cols-2">
+        <Card
+          title="5 · Kas lain di tengah periode"
+          subtitle="Opsional: pelunasan sewa, beli alat, tambahan modal susulan"
+          actions={
+            <Button icon="plus" onClick={() => upd({ oneOffs: [...s.oneOffs, { id: uid(), name: 'Pengeluaran', month: s.start, amount: 0 }] })}>
+              Tambah
+            </Button>
+          }
+        >
+          <div className="flex flex-col gap-3">
+            {!s.oneOffs.length && <p className="text-[13.5px] text-muted">Belum ada.</p>}
+            {s.oneOffs.map((o) => (
+              <div key={o.id} className="grid grid-cols-2 items-end gap-2 rounded-xl border border-line-soft p-3">
+                <label>
+                  <span className="mb-1 block text-[12px] text-muted">Nama</span>
+                  <Input className="h-9" value={o.name} onChange={(e) => setOneOff(o.id, { name: e.target.value })} />
+                </label>
+                <label>
+                  <span className="mb-1 block text-[12px] text-muted">Bulan</span>
+                  <Input className="h-9" type="month" value={o.month} onChange={(e) => e.target.value && setOneOff(o.id, { month: e.target.value })} />
+                </label>
+                <label>
+                  <span className="mb-1 block text-[12px] text-muted">Jenis</span>
+                  <Select
+                    className="h-9"
+                    value={o.amount < 0 ? 'in' : 'out'}
+                    onChange={(e) => setOneOff(o.id, { amount: Math.abs(o.amount) * (e.target.value === 'in' ? -1 : 1) })}
+                    options={[
+                      { value: 'out', label: 'Uang keluar' },
+                      { value: 'in', label: 'Uang masuk' },
+                    ]}
+                  />
+                </label>
+                <label>
+                  <span className="mb-1 block text-[12px] text-muted">Rp · {rp(Math.abs(o.amount), { compact: true })}</span>
+                  <Input className="h-9 text-right" type="number" min={0} value={Math.abs(o.amount)} onChange={(e) => setOneOff(o.id, { amount: Math.abs(Number(e.target.value)) * (o.amount < 0 ? -1 : 1) })} />
+                </label>
+                <div className="col-span-2 -mb-1 flex justify-end">
+                  <IconButton icon="trash" label="Hapus" tone="danger" onClick={() => upd({ oneOffs: s.oneOffs.filter((x) => x.id !== o.id) })} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+
+        <Card title="6 · Angka per pcs" subtitle="Terisi otomatis dari data; ubah bila perlu">
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+            <Field label="Stok awal (pcs)" hint={`Data: ${int(base.openingStock)} pcs`}>
               <Input type="number" value={s.openingStock} onChange={(e) => upd({ openingStock: Number(e.target.value) })} />
             </Field>
-            <Field label="Harga jual rata-rata (Rp/pcs)" hint={`Data: ${rp(base.avgPrice)}`}>
+            <Field label="Harga jual rata-rata (Rp)" hint={`Data: ${rp(base.avgPrice)}`}>
               <Input type="number" value={s.price} onChange={(e) => upd({ price: Number(e.target.value) })} />
             </Field>
-            <Field label="HPP / landed cost (Rp/pcs)" hint={`Data: ${rp(base.landedCost)}`}>
+            <Field label="HPP / landed cost (Rp)" hint={`Data: ${rp(base.landedCost)}`}>
               <Input type="number" value={s.landedCost} onChange={(e) => upd({ landedCost: Number(e.target.value) })} />
             </Field>
-            <Field label="Potongan TikTok (% omzet)" hint={base.feeSource === 'settlement' ? 'Dari laporan settlement (potongan asli)' : 'Komisi platform + dinamis (tarif)'}>
+            <Field label="Potongan TikTok (% omzet)" hint={base.feeSource === 'settlement' ? 'Dari laporan settlement' : 'Komisi platform + dinamis'}>
               <Input
                 type="number"
                 step="0.1"
@@ -208,60 +417,6 @@ export default function Projection() {
             Margin per pcs setelah semua potongan & HPP: <b className="num text-ink">{rp(bep.unit)}</b> ({pct(s.price ? bep.unit / s.price : 0)} dari harga jual).
           </p>
         </Card>
-
-        <Card title="Volume penjualan (pcs neto per bulan)">
-          <div className="mb-4 flex flex-wrap gap-2">
-            <Button onClick={() => setAllVolume(base.avgPcsSelling)}>Rata-rata bulan aktif ({int(base.avgPcsSelling)})</Button>
-            <Button onClick={() => setAllVolume(base.bestPcs)}>Bulan terbaik ({int(base.bestPcs)})</Button>
-            {bep.pcs && <Button onClick={() => setAllVolume(Math.ceil(bep.pcs!))}>Titik impas ({int(bep.pcs)})</Button>}
-            <Button onClick={() => ramp(Math.round(base.avgPcsSelling), Math.ceil((bep.pcs ?? base.bestPcs) * 1.2))}>Naik bertahap ke titik impas +20%</Button>
-          </div>
-          <div className="grid grid-cols-3 gap-3 sm:grid-cols-4">
-            {months.map((m) => (
-              <Field key={m} label={monthLabel(m)}>
-                <Input type="number" min={0} className="text-right" value={s.volume[m] ?? 0} onChange={(e) => upd({ volume: { ...s.volume, [m]: Number(e.target.value) } })} />
-              </Field>
-            ))}
-          </div>
-        </Card>
-      </div>
-
-      <div className="mt-4 grid gap-4 lg:grid-cols-3">
-        <ListCard<CostItem>
-          title="Biaya tetap bulanan"
-          items={s.costs}
-          onChange={(costs) => upd({ costs })}
-          make={() => ({ id: uid(), name: 'Biaya baru', amount: 0, from: s.start })}
-          fields={[
-            { key: 'name', label: 'Nama', type: 'text', span: 2 },
-            { key: 'amount', label: 'Rp / bulan', type: 'number', span: 2 },
-            { key: 'from', label: 'Mulai', type: 'month', span: 2 },
-            { key: 'to', label: 'Selesai (opsional)', type: 'month', span: 2 },
-          ]}
-        />
-        <ListCard<Restock>
-          title="Rencana restock"
-          items={s.restocks}
-          onChange={(restocks) => upd({ restocks })}
-          make={() => ({ id: uid(), month: addMonths(s.start, 1), pcs: 300, costPerPcs: s.landedCost })}
-          fields={[
-            { key: 'month', label: 'Bulan', type: 'month', span: 2 },
-            { key: 'pcs', label: 'Pcs', type: 'number' },
-            { key: 'costPerPcs', label: 'Biaya/pcs (Rp)', type: 'number' },
-          ]}
-        />
-        <ListCard<OneOff>
-          title="Kas sekali (keluar / masuk)"
-          subtitle="Minus = uang masuk"
-          items={s.oneOffs}
-          onChange={(oneOffs) => upd({ oneOffs })}
-          make={() => ({ id: uid(), name: 'Pengeluaran', month: s.start, amount: 0 })}
-          fields={[
-            { key: 'name', label: 'Nama', type: 'text', span: 2 },
-            { key: 'month', label: 'Bulan', type: 'month', span: 2 },
-            { key: 'amount', label: 'Rp', type: 'number', span: 2 },
-          ]}
-        />
       </div>
 
       <div className="mt-4">
@@ -275,7 +430,7 @@ export default function Projection() {
                 <th className={`${th} text-right`}>Potongan TikTok</th>
                 <th className={`${th} text-right`}>Komisi tim</th>
                 <th className={`${th} text-right`}>Biaya tetap</th>
-                <th className={`${th} text-right`}>Kas sekali</th>
+                <th className={`${th} text-right`}>Kas lain</th>
                 <th className={`${th} text-right`}>Restock</th>
                 <th className={`${th} text-right`}>Arus kas</th>
                 <th className={`${th} text-right`}>Saldo kas</th>
@@ -305,7 +460,7 @@ export default function Projection() {
             ))}
           </Table>
           <p className="border-t border-line-soft px-5 py-3 text-[12.5px] text-muted">
-            Arus kas = dana cair TikTok − komisi tim − biaya tetap − kas sekali − restock. Laba operasional memakai HPP (stok lama yang terjual), sehingga bisa berbeda dari arus kas.
+            Arus kas = dana cair TikTok − komisi tim − biaya tetap − kas lain − restock. Laba operasional memakai HPP (stok lama yang terjual), sehingga bisa berbeda dari arus kas.
             Belum termasuk gaji owner & pajak.
           </p>
         </Card>
@@ -314,48 +469,45 @@ export default function Projection() {
   )
 }
 
-type FieldDef<T> = { key: keyof T & string; label: string; type: 'text' | 'number' | 'month'; span?: number }
-function ListCard<T extends { id: string }>({
-  title,
-  subtitle,
-  items,
-  onChange,
-  make,
-  fields,
-}: {
-  title: string
-  subtitle?: string
-  items: T[]
-  onChange: (v: T[]) => void
-  make: () => T
-  fields: FieldDef<T>[]
-}) {
+function MonthChips({ months, value }: { months: string[]; value: (m: string) => number }) {
+  return (
+    <div className="mt-4 flex flex-wrap gap-1.5">
+      {months.map((m) => (
+        <span key={m} className={`rounded-lg px-2.5 py-1 text-[12.5px] ${value(m) ? 'bg-canvas text-ink-2' : 'bg-canvas/50 text-muted'}`}>
+          {monthLabel(m)} <b className="num font-semibold text-ink">{value(m) ? int(value(m)) : '–'}</b>
+        </span>
+      ))}
+    </div>
+  )
+}
+
+type FieldDef<T> = { key: keyof T & string; label: string; type: 'text' | 'number' | 'month'; wide?: boolean }
+function Rows<T extends { id: string }>({ items, onChange, make, fields }: { items: T[]; onChange: (v: T[]) => void; make: () => T; fields: FieldDef<T>[] }) {
   const set = (id: string, k: keyof T, v: unknown) => onChange(items.map((x) => (x.id === id ? { ...x, [k]: v } : x)))
   return (
-    <Card title={title} subtitle={subtitle} actions={<Button icon="plus" onClick={() => onChange([...items, make()])}>Tambah</Button>}>
-      <div className="flex flex-col gap-3">
-        {!items.length && <p className="text-[13.5px] text-muted">Belum ada.</p>}
-        {items.map((it) => (
-          <div key={it.id} className="rounded-xl border border-line-soft p-3">
-            <div className="grid grid-cols-2 gap-2">
-              {fields.map((f) => (
-                <label key={f.key} className={f.span === 2 ? 'col-span-2' : ''}>
-                  <span className="mb-1 block text-[12px] text-muted">{f.label}</span>
-                  <Input
-                    className="h-9"
-                    type={f.type}
-                    value={(it[f.key] as unknown as string | number | undefined) ?? ''}
-                    onChange={(e) => set(it.id, f.key, f.type === 'number' ? Number(e.target.value) : e.target.value || undefined)}
-                  />
-                </label>
-              ))}
-            </div>
-            <div className="mt-1 flex justify-end">
-              <IconButton icon="trash" label="Hapus" tone="danger" onClick={() => onChange(items.filter((x) => x.id !== it.id))} />
-            </div>
-          </div>
-        ))}
+    <div className="flex flex-col gap-2">
+      {!items.length && <p className="text-[13.5px] text-muted">Belum ada.</p>}
+      {items.map((it) => (
+        <div key={it.id} className="flex flex-wrap items-end gap-2 rounded-xl border border-line-soft p-3">
+          {fields.map((f) => (
+            <label key={f.key} className={f.wide ? 'basis-full' : 'min-w-[110px] flex-1'}>
+              <span className="mb-1 block text-[12px] text-muted">{f.label}</span>
+              <Input
+                className="h-9"
+                type={f.type}
+                value={(it[f.key] as unknown as string | number | undefined) ?? ''}
+                onChange={(e) => set(it.id, f.key, f.type === 'number' ? Number(e.target.value) : e.target.value || undefined)}
+              />
+            </label>
+          ))}
+          <IconButton icon="trash" label="Hapus" tone="danger" onClick={() => onChange(items.filter((x) => x.id !== it.id))} />
+        </div>
+      ))}
+      <div>
+        <Button icon="plus" onClick={() => onChange([...items, make()])}>
+          Tambah
+        </Button>
       </div>
-    </Card>
+    </div>
   )
 }

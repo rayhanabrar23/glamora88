@@ -28,7 +28,7 @@ export function Card({ title, subtitle, actions, children, className, padded = t
   return (
     <section className={cx('glass rounded-3xl', className)}>
       {(title || actions) && (
-        <header className="flex items-start justify-between gap-4 px-6 pt-5 pb-1">
+        <header className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3 px-6 pt-5 pb-1">
           <div>
             {title && <h2 className="text-[15px] font-semibold text-ink">{title}</h2>}
             {subtitle && <p className="mt-0.5 text-[13px] text-muted">{subtitle}</p>}
@@ -240,7 +240,7 @@ export function Tabs<T extends string>({ value, onChange, items }: { value: T; o
           key={it.value}
           onClick={() => onChange(it.value)}
           className={cx(
-            'rounded-full px-4 py-1.5 text-[13.5px] font-medium transition-colors',
+            'rounded-full px-4 py-1.5 text-[13.5px] font-medium whitespace-nowrap transition-colors',
             value === it.value ? 'bg-navy text-white' : 'text-ink-2 hover:text-navy',
           )}
         >

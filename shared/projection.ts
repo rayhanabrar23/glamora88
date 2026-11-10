@@ -37,6 +37,25 @@ export interface Scenario {
   costs: CostItem[]
   oneOffs: OneOff[]
   restocks: Restock[]
+  // ---- cara pengisian (opsional; skenario lama tanpa kolom ini tetap terbaca) ----
+  /** sumber dana di awal proyeksi; jumlahnya menjadi openingCash */
+  funds?: Fund[]
+  volumeMode?: 'flat' | 'ramp' | 'manual'
+  volumeFlat?: number
+  rampFrom?: number
+  rampTo?: number
+  rampMonths?: number
+  restockMode?: 'routine' | 'match' | 'manual'
+  restockPcs?: number
+  restockEvery?: number
+  restockFrom?: string
+  restockCost?: number
+}
+
+export interface Fund {
+  id: string
+  name: string
+  amount: number
 }
 
 export interface ProjectionRow {
@@ -80,6 +99,61 @@ export function addMonths(ym: string, n: number) {
 
 export function projectionMonths(s: Pick<Scenario, 'start' | 'months'>) {
   return Array.from({ length: s.months }, (_, i) => addMonths(s.start, i))
+}
+
+/** Melengkapi skenario lama dengan kolom cara pengisian, tanpa mengubah hasil hitungnya. */
+export function upgradeScenario(s: Scenario): Scenario {
+  const out = { ...s }
+  const months = projectionMonths(s)
+  if (!out.volumeMode) {
+    const vals = months.map((m) => s.volume[m] ?? 0)
+    const flat = vals.every((v) => v === vals[0])
+    out.volumeMode = flat ? 'flat' : 'manual'
+    out.volumeFlat = vals[0] ?? 0
+  }
+  if (!out.restockMode) out.restockMode = s.restocks.length ? 'manual' : 'routine'
+  if (!out.funds) {
+    // uang masuk di bulan pertama (dulu ditulis minus di "kas sekali") dipindah menjadi dana awal
+    const moved = s.oneOffs.filter((o) => o.month === s.start && o.amount < 0)
+    out.funds = [
+      ...(s.openingCash ? [{ id: 'kas', name: 'Kas yang bisa dipakai saat ini', amount: s.openingCash }] : []),
+      ...moved.map((o) => ({ id: o.id, name: o.name, amount: -o.amount })),
+    ]
+    out.oneOffs = s.oneOffs.filter((o) => !moved.includes(o))
+  }
+  return normalizeScenario(out)
+}
+
+/** Menurunkan volume, restock, dan saldo awal dari cara pengisian yang dipilih. */
+export function normalizeScenario(s: Scenario): Scenario {
+  const months = projectionMonths(s)
+  const int = (v: unknown) => Math.max(0, Math.round(Number(v) || 0))
+  const volume: Record<string, number> = {}
+  if (s.volumeMode === 'flat') for (const m of months) volume[m] = int(s.volumeFlat)
+  else if (s.volumeMode === 'ramp') {
+    const from = int(s.rampFrom)
+    const to = int(s.rampTo)
+    const n = Math.max(1, Math.round(Number(s.rampMonths) || 1))
+    months.forEach((m, i) => (volume[m] = i >= n - 1 ? to : Math.round(from + ((to - from) * i) / (n - 1))))
+  } else {
+    let last = 0
+    for (const m of months) {
+      if (s.volume[m] != null) last = int(s.volume[m])
+      volume[m] = last
+    }
+  }
+  let restocks = s.restocks
+  const cost = Number(s.restockCost) || s.landedCost
+  if (s.restockMode === 'routine') {
+    const every = Math.max(1, Math.round(Number(s.restockEvery) || 1))
+    const from = s.restockFrom && s.restockFrom > s.start ? s.restockFrom : s.start
+    const first = months.indexOf(from)
+    restocks = int(s.restockPcs) && first >= 0 ? months.filter((_, i) => i >= first && (i - first) % every === 0).map((m) => ({ id: `rutin-${m}`, month: m, pcs: int(s.restockPcs), costPerPcs: cost })) : []
+  } else if (s.restockMode === 'match') {
+    restocks = months.filter((m) => volume[m] > 0).map((m) => ({ id: `ikut-${m}`, month: m, pcs: volume[m], costPerPcs: cost }))
+  }
+  const openingCash = s.funds ? s.funds.reduce((a, f) => a + (Number(f.amount) || 0), 0) : s.openingCash
+  return { ...s, volume, restocks, openingCash }
 }
 
 const active = (c: { from: string; to?: string }, m: string) => m >= c.from && (!c.to || m <= c.to)
