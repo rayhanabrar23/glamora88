@@ -21,6 +21,7 @@ import {
   Select,
   Stat,
   Table,
+  Tabs,
   td,
   tdNum,
   th,
@@ -36,6 +37,8 @@ export default function Products() {
   const [prodForm, setProdForm] = useState<Partial<Product> | null>(null)
   const [varForm, setVarForm] = useState<Partial<Variant> | null>(null)
   const [opname, setOpname] = useState(false)
+  const [view, setView] = useState<'stok' | 'harga'>('stok')
+  const [priceFor, setPriceFor] = useState<Product | null>(null)
   const toast = useToast()
 
   const byProduct = useMemo(() => {
@@ -99,7 +102,18 @@ export default function Products() {
           </Callout>
         </div>
       )}
-      <Card padded={false}>
+      <div className="mb-3">
+        <Tabs
+          value={view}
+          onChange={setView}
+          items={[
+            { value: 'stok', label: 'Stok' },
+            { value: 'harga', label: 'Daftar harga' },
+          ]}
+        />
+      </div>
+      {view === 'harga' && <PriceList products={refs.products} byProduct={byProduct} open={open} setOpen={setOpen} onEdit={setPriceFor} />}
+      {view === 'stok' && <Card padded={false}>
         <Table
           head={
             <tr>
@@ -184,7 +198,19 @@ export default function Products() {
             )
           })}
         </Table>
-      </Card>
+      </Card>}
+      {priceFor && (
+        <PriceForm
+          product={priceFor}
+          variants={refs.variants.filter((v) => v.product_code === priceFor.code)}
+          suggested={sellOf(byProduct.get(priceFor.code) ?? []).value}
+          onClose={() => setPriceFor(null)}
+          onSaved={() => {
+            refs.reload()
+            stock.reload()
+          }}
+        />
+      )}
       {prodForm && (
         <ProductForm
           initial={prodForm}
@@ -388,6 +414,155 @@ function OpnameForm({ rows, label, onClose, onSaved }: { rows: StockRow[]; label
           })}
         </Table>
       </div>
+    </Modal>
+  )
+}
+
+// ---------- Daftar harga ----------
+const wavg = (rows: StockRow[], val: (r: StockRow) => number | null, w: (r: StockRow) => number) => {
+  const ok = rows.filter((r) => val(r) != null)
+  if (!ok.length) return null
+  const tw = ok.reduce((a, r) => a + Math.max(0, w(r)), 0)
+  return tw > 0 ? ok.reduce((a, r) => a + val(r)! * Math.max(0, w(r)), 0) / tw : ok.reduce((a, r) => a + val(r)!, 0) / ok.length
+}
+/** harga jual: harga katalog bila semua varian sudah diisi, selain itu rata-rata penjualan aktual */
+function sellOf(rows: StockRow[]): { value: number | null; source: 'katalog' | 'rata-rata terjual' | null } {
+  if (rows.length && rows.every((r) => r.listPrice != null)) return { value: wavg(rows, (r) => r.listPrice, () => 1), source: 'katalog' }
+  const avg = wavg(rows, (r) => r.avgSell, (r) => r.soldNet)
+  return { value: avg, source: avg != null ? 'rata-rata terjual' : null }
+}
+const cny = (v: number) => `¥${v.toLocaleString('id-ID', { maximumFractionDigits: 2 })}`
+function span(rows: StockRow[], val: (r: StockRow) => number | null, fmt: (v: number) => string) {
+  const xs = rows.map(val).filter((v): v is number => v != null)
+  if (!xs.length) return '–'
+  const lo = Math.min(...xs)
+  const hi = Math.max(...xs)
+  return hi - lo < 0.005 * Math.max(1, hi) ? fmt(hi) : `${fmt(lo)} – ${fmt(hi)}`
+}
+
+function PriceList({ products, byProduct, open, setOpen, onEdit }: {
+  products: Product[]
+  byProduct: Map<string, StockRow[]>
+  open: Record<string, boolean>
+  setOpen: (f: (o: Record<string, boolean>) => Record<string, boolean>) => void
+  onEdit: (p: Product) => void
+}) {
+  const cells = (landed: number | null, sell: { value: number | null; source: string | null }) => {
+    const margin = landed != null && sell.value != null ? sell.value - landed : null
+    return (
+      <>
+        <td className={tdNum}>{landed != null ? rp(landed) : '–'}</td>
+        <td className={tdNum}>
+          {sell.value != null ? rp(sell.value) : '–'}
+          {sell.source && <div className="text-[11.5px] font-normal text-muted">{sell.source}</div>}
+        </td>
+        <td className={`${tdNum} ${margin != null && margin < 0 ? 'text-bad' : ''}`}>{margin != null ? rp(margin) : '–'}</td>
+        <td className={tdNum}>{margin != null && sell.value ? pct(margin / sell.value, 0) : '–'}</td>
+      </>
+    )
+  }
+  return (
+    <Card padded={false}>
+      <Table
+        head={
+          <tr>
+            <th className={th}>Produk</th>
+            <th className={`${th} text-right`}>Harga beli (¥)</th>
+            <th className={`${th} text-right`}>Harga beli (Rp)</th>
+            <th className={`${th} text-right`}>Modal sampai gudang</th>
+            <th className={`${th} text-right`}>Harga jual</th>
+            <th className={`${th} text-right`}>Margin / pcs</th>
+            <th className={`${th} text-right`}>Margin</th>
+            <th className={th}></th>
+          </tr>
+        }
+      >
+        {products.map((p) => {
+          const rows = byProduct.get(p.code) ?? []
+          const isOpen = open[p.code]
+          return (
+            <Fragment key={p.code}>
+              <tr className="cursor-pointer" onClick={() => setOpen((o) => ({ ...o, [p.code]: !o[p.code] }))}>
+                <td className={td}>
+                  <div className="flex items-center gap-2">
+                    <Icon name="chevron" size={16} className={`text-muted transition-transform ${isOpen ? '' : '-rotate-90'}`} />
+                    <div>
+                      <div className="font-medium text-ink">
+                        {p.code} · {p.name}
+                      </div>
+                      <div className="text-[12px] text-muted">
+                        {p.category} · {rows.length} varian
+                      </div>
+                    </div>
+                  </div>
+                </td>
+                <td className={tdNum}>{span(rows, (r) => r.buyCny, cny)}</td>
+                <td className={tdNum}>{span(rows, (r) => r.buyRp, (v) => rp(v))}</td>
+                {cells(wavg(rows, (r) => r.landed, (r) => r.arrived), sellOf(rows))}
+                <td className={`${td} text-right`} onClick={(e) => e.stopPropagation()}>
+                  <IconButton icon="edit" label="Atur harga jual" onClick={() => onEdit(p)} />
+                </td>
+              </tr>
+              {isOpen &&
+                rows.map((r) => (
+                  <tr key={r.sku} className="bg-canvas/40 text-[13.5px]">
+                    <td className={`${td} pl-12`}>
+                      <span className="text-ink">{r.color || r.sku}</span>
+                      <span className="text-muted"> · {r.sku}</span>
+                    </td>
+                    <td className={tdNum}>{r.buyCny != null ? cny(r.buyCny) : '–'}</td>
+                    <td className={tdNum}>{r.buyRp != null ? rp(r.buyRp) : '–'}</td>
+                    {cells(r.landed, sellOf([r]))}
+                    <td className={td}></td>
+                  </tr>
+                ))}
+            </Fragment>
+          )
+        })}
+      </Table>
+      <p className="border-t border-line-soft px-6 py-3 text-[12.5px] leading-relaxed text-muted">
+        Harga beli = harga barang di batch terakhir. Modal sampai gudang = rata-rata harga beli semua batch ditambah cargo dan biaya lain per pcs. Margin = harga jual − modal sampai gudang,
+        belum dikurangi potongan TikTok.
+      </p>
+    </Card>
+  )
+}
+
+function PriceForm({ product, variants, suggested, onClose, onSaved }: { product: Product; variants: Variant[]; suggested: number | null; onClose: () => void; onSaved: () => void }) {
+  const same = variants.length > 0 && variants.every((v) => v.price === variants[0].price) ? variants[0].price : null
+  const [price, setPrice] = useState<number | ''>(same ?? (suggested != null ? Math.round(suggested) : ''))
+  const [busy, setBusy] = useState(false)
+  const toast = useToast()
+  async function save() {
+    setBusy(true)
+    try {
+      for (const v of variants) await api.post('/variants', { ...v, price: price === '' ? null : price })
+      toast('Harga jual disimpan')
+      onSaved()
+      onClose()
+    } catch (e) {
+      toast((e as Error).message, 'bad')
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <Modal
+      open
+      title={`Harga jual ${product.code} · ${product.name}`}
+      onClose={onClose}
+      footer={
+        <>
+          <Button onClick={onClose}>Batal</Button>
+          <Button variant="primary" onClick={save} disabled={busy || !variants.length}>
+            Simpan
+          </Button>
+        </>
+      }
+    >
+      <Field label="Harga jual katalog (Rp)" hint={`Berlaku untuk ${variants.length} varian. Kosongkan untuk memakai rata-rata penjualan. Harga per warna bisa diubah lewat "Ubah varian" di tab Stok.`}>
+        <Input type="number" min={0} autoFocus value={price} onChange={(e) => setPrice(e.target.value === '' ? '' : Number(e.target.value))} />
+      </Field>
     </Modal>
   )
 }

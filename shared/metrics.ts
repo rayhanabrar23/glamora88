@@ -134,6 +134,12 @@ export interface StockRow {
   sellThrough: number | null
   lastSale: string | null
   tracked: boolean
+  /** harga beli barang di batch terakhir (¥ dan Rp, belum termasuk cargo) */
+  buyCny: number | null
+  buyRp: number | null
+  /** rata-rata harga jual aktual (tertimbang pcs neto) dan harga jual katalog */
+  avgSell: number | null
+  listPrice: number | null
 }
 
 export function computeStock(b: DataBundle): StockRow[] {
@@ -164,6 +170,10 @@ export function computeStock(b: DataBundle): StockRow[] {
         sellThrough: null,
         lastSale: null,
         tracked: c?.tracked ?? true,
+        buyCny: null,
+        buyRp: null,
+        avgSell: null,
+        listPrice: v?.price ?? null,
       }
       rows.set(sku, r)
     }
@@ -183,6 +193,29 @@ export function computeStock(b: DataBundle): StockRow[] {
     if (netQty(s) > 0 && (!r.lastSale || s.order_date > r.lastSale)) r.lastSale = s.order_date
   }
   for (const a of b.adjustments) ensure(a.sku).adjustments += a.qty_delta
+  // harga beli terakhir per SKU
+  const pById = new Map(b.purchases.map((p) => [p.id, p]))
+  const lastBuy = new Map<string, string>()
+  for (const it of b.purchaseItems) {
+    const p = pById.get(it.purchase_id)
+    if (!p || it.price_cny == null) continue
+    if ((lastBuy.get(it.sku) ?? '') <= p.order_date) {
+      lastBuy.set(it.sku, p.order_date)
+      const r = ensure(it.sku)
+      r.buyCny = it.price_cny
+      r.buyRp = it.price_cny * n(p.exchange_rate)
+    }
+  }
+  // rata-rata harga jual aktual
+  const sell = new Map<string, { q: number; v: number }>()
+  for (const x of b.sales) {
+    if (!x.sku || netQty(x) <= 0) continue
+    const a = sell.get(x.sku) ?? { q: 0, v: 0 }
+    a.q += netQty(x)
+    a.v += netQty(x) * x.unit_price
+    sell.set(x.sku, a)
+  }
+  for (const [sku, a] of sell) ensure(sku).avgSell = a.v / a.q
   for (const r of rows.values()) {
     r.onHand = r.arrived - r.soldNet + r.adjustments
     r.value = Math.max(0, r.onHand) * r.landed

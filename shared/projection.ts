@@ -20,6 +20,8 @@ export interface Restock {
   month: string
   pcs: number
   costPerPcs: number
+  /** SKU yang direstock (kosong = umum, tanpa rincian SKU) */
+  sku?: string
 }
 
 export interface Scenario {

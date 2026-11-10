@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { addMonths, normalizeScenario, projectionMonths, runProjection, upgradeScenario, type CostItem, type Fund, type OneOff, type Restock, type Scenario } from '../../shared/projection'
+import type { StockRow } from '../../shared/metrics'
 import { api } from '../lib/api'
 import { int, monthLabel, pct, rp, thisMonth } from '../lib/format'
 import { useData } from '../lib/useData'
@@ -65,6 +66,7 @@ function defaultScenario(b: Base): Scenario {
 
 export default function Projection() {
   const { data: base, error, reload } = useData<Base>('/projection/base')
+  const { data: stock } = useData<StockRow[]>('/stock')
   const [s, setS] = useState<Scenario | null>(null)
   const [dirty, setDirty] = useState(false)
   const toast = useToast()
@@ -281,7 +283,7 @@ export default function Projection() {
               items={[
                 { value: 'routine', label: 'Rutin' },
                 { value: 'match', label: 'Ikuti penjualan' },
-                { value: 'manual', label: 'Atur sendiri' },
+                { value: 'manual', label: 'Rinci per SKU' },
               ]}
             />
           }
@@ -308,16 +310,7 @@ export default function Projection() {
             </Field>
           )}
           {s.restockMode === 'manual' ? (
-            <Rows<Restock>
-              items={s.restocks}
-              onChange={(restocks) => upd({ restocks })}
-              make={() => ({ id: uid(), month: s.start, pcs: 300, costPerPcs: s.landedCost })}
-              fields={[
-                { key: 'month', label: 'Bulan', type: 'month' },
-                { key: 'pcs', label: 'Pcs', type: 'number' },
-                { key: 'costPerPcs', label: 'Biaya/pcs (Rp)', type: 'number' },
-              ]}
-            />
+            <RestockPlan items={s.restocks} months={months} stock={stock ?? []} fallbackCost={s.landedCost} onChange={(restocks) => upd({ restocks })} />
           ) : (
             <MonthChips months={months} value={(m) => s.restocks.filter((x) => x.month === m).reduce((a, x) => a + x.pcs, 0)} />
           )}
@@ -466,6 +459,100 @@ export default function Projection() {
         </Card>
       </div>
     </>
+  )
+}
+
+function RestockPlan({ items, months, stock, fallbackCost, onChange }: { items: Restock[]; months: string[]; stock: StockRow[]; fallbackCost: number; onChange: (v: Restock[]) => void }) {
+  const skus = stock.filter((r) => r.tracked && r.category !== 'Kemasan')
+  const bySku = new Map(skus.map((r) => [r.sku, r]))
+  const options = [
+    { value: '', label: 'Umum (tanpa rincian SKU)' },
+    ...skus.map((r) => ({ value: r.sku, label: `${r.product_code} · ${r.product_name} · ${r.color} (sisa ${int(Math.max(0, r.onHand))})` })),
+  ]
+  const costOf = (sku?: string) => Math.round((sku && bySku.get(sku)?.landed) || fallbackCost)
+  const used = [...new Set(items.map((x) => x.month))].filter((m) => months.includes(m)).sort()
+  const outside = items.filter((x) => !months.includes(x.month))
+  const set = (id: string, patch: Partial<Restock>) => onChange(items.map((x) => (x.id === id ? { ...x, ...patch } : x)))
+  const addLine = (month: string) => onChange([...items, { id: uid(), month, pcs: 0, costPerPcs: costOf() }])
+  const nextMonth = months.find((m) => !used.includes(m))
+  const copyTo = (from: string, to: string) => onChange([...items, ...items.filter((x) => x.month === from).map((x) => ({ ...x, id: uid(), month: to }))])
+  return (
+    <div className="flex flex-col gap-3">
+      {!used.length && <p className="text-[13.5px] text-muted">Belum ada rencana restock.</p>}
+      {used.map((m) => {
+        const lines = items.filter((x) => x.month === m)
+        const after = months[months.indexOf(m) + 1]
+        return (
+          <div key={m} className="overflow-hidden rounded-2xl border border-line-soft">
+            <div className="flex flex-wrap items-center justify-between gap-2 bg-canvas/70 px-3.5 py-2.5">
+              <div className="flex items-center gap-2.5">
+                <Input
+                  aria-label="Bulan restock"
+                  className="h-8 w-[158px] text-[13px] font-semibold"
+                  type="month"
+                  min={months[0]}
+                  max={months[months.length - 1]}
+                  value={m}
+                  onChange={(e) => e.target.value && onChange(items.map((x) => (x.month === m ? { ...x, month: e.target.value } : x)))}
+                />
+                <span className="num text-[13px] text-muted">
+                  {int(lines.reduce((a, x) => a + x.pcs, 0))} pcs · {rp(lines.reduce((a, x) => a + x.pcs * x.costPerPcs, 0), { compact: true })}
+                </span>
+              </div>
+              <div className="flex items-center gap-1">
+                {after && !used.includes(after) && (
+                  <button type="button" className="rounded-full px-2.5 py-1 text-[12.5px] font-medium text-ink-2 hover:bg-white hover:text-navy" onClick={() => copyTo(m, after)}>
+                    Salin ke {monthLabel(after)}
+                  </button>
+                )}
+                <IconButton icon="trash" label={`Hapus restock ${monthLabel(m, true)}`} tone="danger" onClick={() => onChange(items.filter((x) => x.month !== m))} />
+              </div>
+            </div>
+            <div className="flex flex-col gap-2 p-3">
+              {lines.map((x) => (
+                <div key={x.id} className="grid grid-cols-[1fr_32px] items-end gap-2 sm:grid-cols-[1fr_84px_120px_32px]">
+                  <label className="min-w-0">
+                    <span className="mb-1 block text-[12px] text-muted">Produk</span>
+                    <Select className="h-9" value={x.sku ?? ''} options={options} onChange={(e) => set(x.id, { sku: e.target.value || undefined, costPerPcs: costOf(e.target.value) })} />
+                  </label>
+                  <label className="col-start-1 sm:col-start-auto">
+                    <span className="mb-1 block text-[12px] text-muted">Pcs</span>
+                    <Input className="h-9 text-right" type="number" min={0} value={x.pcs} onChange={(e) => set(x.id, { pcs: Math.max(0, Number(e.target.value)) })} />
+                  </label>
+                  <label className="col-start-1 sm:col-start-auto">
+                    <span className="mb-1 block text-[12px] text-muted">Biaya/pcs (Rp)</span>
+                    <Input className="h-9 text-right" type="number" min={0} value={x.costPerPcs} onChange={(e) => set(x.id, { costPerPcs: Math.max(0, Number(e.target.value)) })} />
+                  </label>
+                  <div className="col-start-2 row-start-1 sm:col-start-auto sm:row-start-auto">
+                    <IconButton icon="trash" label="Hapus baris" tone="danger" onClick={() => onChange(items.filter((y) => y.id !== x.id))} />
+                  </div>
+                </div>
+              ))}
+              <div>
+                <Button icon="plus" onClick={() => addLine(m)}>
+                  Tambah SKU
+                </Button>
+              </div>
+            </div>
+          </div>
+        )
+      })}
+      {outside.length > 0 && (
+        <p className="text-[12.5px] text-warn">
+          {outside.length} baris restock berada di luar periode proyeksi dan tidak dihitung.{' '}
+          <button type="button" className="font-medium underline" onClick={() => onChange(items.filter((x) => months.includes(x.month)))}>
+            Hapus
+          </button>
+        </p>
+      )}
+      {nextMonth && (
+        <div>
+          <Button icon="plus" onClick={() => addLine(nextMonth)}>
+            Tambah bulan restock ({monthLabel(nextMonth)})
+          </Button>
+        </div>
+      )}
+    </div>
   )
 }
 
