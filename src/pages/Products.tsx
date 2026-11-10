@@ -38,7 +38,7 @@ export default function Products() {
   const [varForm, setVarForm] = useState<Partial<Variant> | null>(null)
   const [opname, setOpname] = useState(false)
   const [view, setView] = useState<'stok' | 'harga'>('stok')
-  const [priceFor, setPriceFor] = useState<Product | null>(null)
+  const [priceFor, setPriceFor] = useState<{ title: string; skus: string[] } | null>(null)
   const toast = useToast()
 
   const byProduct = useMemo(() => {
@@ -112,7 +112,7 @@ export default function Products() {
           ]}
         />
       </div>
-      {view === 'harga' && <PriceList products={refs.products} byProduct={byProduct} open={open} setOpen={setOpen} onEdit={setPriceFor} />}
+      {view === 'harga' && <PriceList products={refs.products} byProduct={byProduct} open={open} setOpen={setOpen} onEdit={(title, skus) => setPriceFor({ title, skus })} />}
       {view === 'stok' && <Card padded={false}>
         <Table
           head={
@@ -201,9 +201,9 @@ export default function Products() {
       </Card>}
       {priceFor && (
         <PriceForm
-          product={priceFor}
-          variants={refs.variants.filter((v) => v.product_code === priceFor.code)}
-          suggested={sellOf(byProduct.get(priceFor.code) ?? []).value}
+          title={priceFor.title}
+          variants={refs.variants.filter((v) => priceFor.skus.includes(v.sku))}
+          suggested={sellOf((stock.data ?? []).filter((r) => priceFor.skus.includes(r.sku))).value}
           onClose={() => setPriceFor(null)}
           onSaved={() => {
             refs.reload()
@@ -445,15 +445,15 @@ function PriceList({ products, byProduct, open, setOpen, onEdit }: {
   byProduct: Map<string, StockRow[]>
   open: Record<string, boolean>
   setOpen: (f: (o: Record<string, boolean>) => Record<string, boolean>) => void
-  onEdit: (p: Product) => void
+  onEdit: (title: string, skus: string[]) => void
 }) {
-  const cells = (landed: number | null, sell: { value: number | null; source: string | null }) => {
+  const cells = (landed: number | null, sell: { value: number | null; source: string | null }, sellText?: string) => {
     const margin = landed != null && sell.value != null ? sell.value - landed : null
     return (
       <>
         <td className={tdNum}>{landed != null ? rp(landed) : '–'}</td>
         <td className={tdNum}>
-          {sell.value != null ? rp(sell.value) : '–'}
+          {sellText ?? (sell.value != null ? rp(sell.value) : '–')}
           {sell.source && <div className="text-[11.5px] font-normal text-muted">{sell.source}</div>}
         </td>
         <td className={`${tdNum} ${margin != null && margin < 0 ? 'text-bad' : ''}`}>{margin != null ? rp(margin) : '–'}</td>
@@ -498,9 +498,9 @@ function PriceList({ products, byProduct, open, setOpen, onEdit }: {
                 </td>
                 <td className={tdNum}>{span(rows, (r) => r.buyCny, cny)}</td>
                 <td className={tdNum}>{span(rows, (r) => r.buyRp, (v) => rp(v))}</td>
-                {cells(wavg(rows, (r) => r.landed, (r) => r.arrived), sellOf(rows))}
+                {cells(wavg(rows, (r) => r.landed, (r) => r.arrived), sellOf(rows), rows.length && rows.every((r) => r.listPrice != null) ? span(rows, (r) => r.listPrice, (v) => rp(v)) : undefined)}
                 <td className={`${td} text-right`} onClick={(e) => e.stopPropagation()}>
-                  <IconButton icon="edit" label="Atur harga jual" onClick={() => onEdit(p)} />
+                  <IconButton icon="edit" label="Atur harga jual semua warna" onClick={() => onEdit(`${p.code} · ${p.name} (semua warna)`, rows.map((r) => r.sku))} />
                 </td>
               </tr>
               {isOpen &&
@@ -513,7 +513,9 @@ function PriceList({ products, byProduct, open, setOpen, onEdit }: {
                     <td className={tdNum}>{r.buyCny != null ? cny(r.buyCny) : '–'}</td>
                     <td className={tdNum}>{r.buyRp != null ? rp(r.buyRp) : '–'}</td>
                     {cells(r.landed, sellOf([r]))}
-                    <td className={td}></td>
+                    <td className={`${td} text-right`}>
+                      <IconButton icon="edit" label={`Atur harga jual ${r.color || r.sku}`} onClick={() => onEdit(`${p.name} · ${r.color || r.sku}`, [r.sku])} />
+                    </td>
                   </tr>
                 ))}
             </Fragment>
@@ -528,7 +530,7 @@ function PriceList({ products, byProduct, open, setOpen, onEdit }: {
   )
 }
 
-function PriceForm({ product, variants, suggested, onClose, onSaved }: { product: Product; variants: Variant[]; suggested: number | null; onClose: () => void; onSaved: () => void }) {
+function PriceForm({ title, variants, suggested, onClose, onSaved }: { title: string; variants: Variant[]; suggested: number | null; onClose: () => void; onSaved: () => void }) {
   const same = variants.length > 0 && variants.every((v) => v.price === variants[0].price) ? variants[0].price : null
   const [price, setPrice] = useState<number | ''>(same ?? (suggested != null ? Math.round(suggested) : ''))
   const [busy, setBusy] = useState(false)
@@ -549,7 +551,7 @@ function PriceForm({ product, variants, suggested, onClose, onSaved }: { product
   return (
     <Modal
       open
-      title={`Harga jual ${product.code} · ${product.name}`}
+      title={`Harga jual ${title}`}
       onClose={onClose}
       footer={
         <>
@@ -560,7 +562,7 @@ function PriceForm({ product, variants, suggested, onClose, onSaved }: { product
         </>
       }
     >
-      <Field label="Harga jual katalog (Rp)" hint={`Berlaku untuk ${variants.length} varian. Kosongkan untuk memakai rata-rata penjualan. Harga per warna bisa diubah lewat "Ubah varian" di tab Stok.`}>
+      <Field label="Harga jual katalog (Rp)" hint={variants.length > 1 ? `Berlaku untuk ${variants.length} warna sekaligus. Untuk harga yang berbeda per warna, buka produknya lalu klik pensil di baris warna. Kosongkan untuk memakai rata-rata penjualan.` : 'Hanya untuk warna ini. Kosongkan untuk memakai rata-rata penjualan.'}>
         <Input type="number" min={0} autoFocus value={price} onChange={(e) => setPrice(e.target.value === '' ? '' : Number(e.target.value))} />
       </Field>
     </Modal>
