@@ -508,9 +508,13 @@ app.get('/settlements/report', async (c) => {
     if (!startOf.has(r.store) || d < startOf.get(r.store)!) startOf.set(r.store, d)
     if (!endOf.has(r.store) || d > endOf.get(r.store)!) endOf.set(r.store, d)
   }
-  const unsettled = [...orders.values()]
-    .filter((o) => o.net > 0 && startOf.has(o.store) && o.date.slice(0, 10) >= startOf.get(o.store)! && o.date.slice(0, 10) <= endOf.get(o.store)! && !settledKeys.has(`${o.store}|${o.order_id}`))
-    .sort((a, b) => b.date.localeCompare(a.date))
+  // belum cair = terjual tapi belum ada di laporan; dipisah antara yang masih dalam periode laporan
+  // dan yang dibuat setelah laporan terakhir (laporannya belum diunggah)
+  const open = [...orders.values()].filter((o) => o.net > 0 && !settledKeys.has(`${o.store}|${o.order_id}`))
+  const day = (o: { date: string }) => o.date.slice(0, 10)
+  const inPeriod = open.filter((o) => startOf.has(o.store) && day(o) >= startOf.get(o.store)! && day(o) <= endOf.get(o.store)!)
+  const afterPeriod = open.filter((o) => !endOf.has(o.store) || day(o) > endOf.get(o.store)!)
+  const unsettled = [...inPeriod, ...afterPeriod].sort((a, b) => b.date.localeCompare(a.date))
   const orderRows = rows.filter((r) => isOrder(r.kind))
   return c.json({
     totals: {
@@ -527,7 +531,14 @@ app.get('/settlements/report', async (c) => {
     byMonth: [...byMonth.values()].sort((a, b) => a.month.localeCompare(b.month)),
     components: [...comp.entries()].map(([name, total]) => ({ name, total })).sort((a, b) => Math.abs(b.total) - Math.abs(a.total)),
     comparison: { matched, matchedOmzet, estFees, actFees },
-    unsettled: { count: unsettled.length, omzet: unsettled.reduce((a, o) => a + o.omzet, 0), items: unsettled.slice(0, 50) },
+    unsettled: {
+      count: unsettled.length,
+      omzet: unsettled.reduce((a, o) => a + o.omzet, 0),
+      items: unsettled.slice(0, 50),
+      afterCount: afterPeriod.length,
+      afterOmzet: afterPeriod.reduce((a, o) => a + o.omzet, 0),
+      lastReportDate: [...endOf.values()].sort().pop() ?? null,
+    },
   })
 })
 

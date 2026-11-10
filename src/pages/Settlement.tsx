@@ -14,7 +14,7 @@ interface Report {
   byMonth: { month: string; count: number; revenue: number; fees: number; amount: number }[]
   components: { name: string; total: number }[]
   comparison: { matched: number; matchedOmzet: number; estFees: number; actFees: number }
-  unsettled: { count: number; omzet: number; items: { store: string; order_id: string; date: string; omzet: number }[] }
+  unsettled: { count: number; omzet: number; afterCount: number; afterOmzet: number; lastReportDate: string | null; items: { store: string; order_id: string; date: string; omzet: number }[] }
 }
 
 export default function Settlement() {
@@ -61,7 +61,13 @@ export default function Settlement() {
               label="Terjual tapi belum cair"
               value={`${int(data.unsettled.count)} pesanan`}
               tone={data.unsettled.count ? 'bad' : 'good'}
-              hint={data.unsettled.count ? `${rp(data.unsettled.omzet, { compact: true })} omzet dalam periode laporan` : 'Semua pesanan dalam periode laporan sudah cair'}
+              hint={
+                !data.unsettled.count
+                  ? 'Semua pesanan sudah ada di laporan settlement'
+                  : data.unsettled.afterCount
+                    ? `${rp(data.unsettled.omzet, { compact: true })} omzet · ${int(data.unsettled.afterCount)} pesanan dibuat setelah laporan terakhir, unggah laporan settlement terbaru`
+                    : `${rp(data.unsettled.omzet, { compact: true })} omzet dalam periode laporan`
+              }
             />
           </div>
 
