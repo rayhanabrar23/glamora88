@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { parseCsv, parseTikTokRows, type ParseResult } from '../../shared/tiktok'
 import { SALE_STATUSES, type Sale } from '../../shared/types'
-import { readXlsx } from '../lib/xlsx'
+import { readXlsx, readXlsxSheetNames } from '../lib/xlsx'
 import { api, qs } from '../lib/api'
 import { dateLabel, int, rp, today } from '../lib/format'
 import { useRefs } from '../lib/refs'
@@ -208,18 +208,46 @@ function Upload({ stores, onDone }: { stores: string[]; onDone: () => void }) {
   const [err, setErr] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState<{ received: number; inserted: number; updated: number; unmapped: number } | null>(null)
+  // file berisi beberapa sheet (mis. satu sheet per toko): setiap sheet yang terbaca bisa dipilih
+  const [sheets, setSheets] = useState<{ name: string; parsed: ParseResult }[]>([])
+  const [sheet, setSheet] = useState('')
   const toast = useToast()
 
+  const pickSheet = (name: string, list = sheets) => {
+    const hit = list.find((x) => x.name === name)
+    if (!hit) return
+    setSheet(name)
+    setParsed(hit.parsed)
+    setResult(null)
+    const guess = stores.find((st) => name.toLowerCase().includes(st.toLowerCase()))
+    if (guess) setStore(guess)
+  }
   async function read(fl: File) {
     setFile(fl)
     setParsed(null)
     setErr(null)
     setResult(null)
+    setSheets([])
+    setSheet('')
     try {
-      let rows: unknown[][]
-      if (/\.csv$/i.test(fl.name)) rows = parseCsv(await fl.text())
-      else rows = (await readXlsx(fl)) as unknown[][]
-      setParsed(parseTikTokRows(rows as never))
+      if (/\.csv$/i.test(fl.name)) {
+        setParsed(parseTikTokRows(parseCsv(await fl.text()) as never))
+        return
+      }
+      const names = await readXlsxSheetNames(fl)
+      const ok: { name: string; parsed: ParseResult }[] = []
+      let firstErr: Error | null = null
+      for (const name of names) {
+        try {
+          const r = parseTikTokRows((await readXlsx(fl, name)) as never)
+          if (r.lines.length) ok.push({ name, parsed: r })
+        } catch (e) {
+          firstErr ??= e as Error
+        }
+      }
+      if (!ok.length) throw firstErr ?? new Error('Tidak ada sheet berisi data pesanan TikTok')
+      setSheets(ok)
+      pickSheet(ok[0].name, ok)
     } catch (e) {
       setErr((e as Error).message)
     }
@@ -256,6 +284,11 @@ function Upload({ stores, onDone }: { stores: string[]; onDone: () => void }) {
             <input type="file" accept=".xlsx,.csv" className="hidden" onChange={(e) => e.target.files?.[0] && read(e.target.files[0])} />
             <span className="text-[15px] font-medium text-navy">{file ? file.name : 'Pilih file .xlsx / .csv'}</span>
           </label>
+          {sheets.length > 1 && (
+            <Field label="Sheet" hint={`File ini berisi ${sheets.length} sheet data pesanan; unggah satu per satu dengan toko yang sesuai.`}>
+              <Select value={sheet} onChange={(e) => pickSheet(e.target.value)} options={sheets.map((x) => ({ value: x.name, label: `${x.name} (${x.parsed.lines.length} baris)` }))} />
+            </Field>
+          )}
           {err && <Callout tone="critical" title="File tidak bisa dibaca">{err}</Callout>}
         </div>
       </Card>
