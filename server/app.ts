@@ -9,7 +9,7 @@ import { buildDashboard } from '../shared/dashboard'
 import { computeMonthly, computeStock, type DataBundle } from '../shared/metrics'
 import { commissionFor, parseTeamCommission, teamPct } from '../shared/commission'
 import { buildLiveReport, lateMinutes, type LiveSession } from '../shared/live'
-import type { ImportedSaleLine } from '../shared/types'
+import { PRIVATE_EXPENSE_CATEGORIES, type ImportedSaleLine } from '../shared/types'
 
 type SessionUser = { id: number; name: string; role: string }
 const app = new Hono<{ Bindings: Env; Variables: { user: SessionUser } }>().basePath('/api')
@@ -175,6 +175,7 @@ const ownerOnly = (path: string, method: string) =>
   path.startsWith('/api/data/') ||
   path.startsWith('/api/users') ||
   path.startsWith('/api/audit') ||
+  path.startsWith('/api/team-commission') ||
   (path.startsWith('/api/stores') && method !== 'GET')
 // owner dianggap sudah membuka kunci bila masuk dengan akun "owner" atau sudah memasukkan kata sandi owner
 const ownerOk = async (c: { req: { header: (k: string) => string | undefined }; env: Env; get: (k: 'user') => SessionUser }) =>
@@ -407,8 +408,10 @@ app.delete('/stock/adjustments/:id', async (c) => {
 app.get('/settings', async (c) => {
   const stores = await c.env.DB.prepare('SELECT * FROM stores ORDER BY id').all()
   const all = await getSettings(c.env.DB)
-  // catatan KPI hanya untuk owner
-  const settings = Object.fromEntries(Object.entries(all).filter(([k]) => !k.startsWith('kpi_')))
+  // catatan KPI hanya untuk owner; persen komisi per orang juga hanya untuk owner (staf cukup tahu nama tim)
+  const owner = await ownerOk(c)
+  const settings: Record<string, string> = Object.fromEntries(Object.entries(all).filter(([k]) => !k.startsWith('kpi_') && (owner || k !== 'team_commission')))
+  settings.team_names = JSON.stringify(parseTeamCommission(all.team_commission).members.map((m) => m.name))
   return c.json({ settings, stores: stores.results })
 })
 // kunci yang boleh diubah staf (skenario proyeksi & restock); selebihnya hanya owner
@@ -695,21 +698,33 @@ app.delete('/boosts/:id', async (c) => {
 })
 
 // ---------- Biaya ----------
-app.get('/expenses', async (c) => c.json((await c.env.DB.prepare('SELECT * FROM expenses ORDER BY exp_date DESC, id DESC').all()).results))
+// gaji & komisi hanya untuk owner: disembunyikan dari daftar dan tidak bisa diubah staf
+const PRIVATE_CATS = new Set(PRIVATE_EXPENSE_CATEGORIES)
+const PRIVATE_MSG = 'Gaji dan komisi hanya bisa dilihat dan diubah owner.'
+const privateRow = async (db: D1Database, id: string) => PRIVATE_CATS.has((await db.prepare('SELECT category FROM expenses WHERE id = ?').bind(id).first<{ category: string }>())?.category ?? '')
+app.get('/expenses', async (c) => {
+  const rows = (await c.env.DB.prepare('SELECT * FROM expenses ORDER BY exp_date DESC, id DESC').all<{ category: string }>()).results
+  return c.json((await ownerOk(c)) ? rows : rows.filter((r) => !PRIVATE_CATS.has(r.category)))
+})
 const expVals = (b: Record<string, unknown>) => [b.exp_date, b.category, str(b.description), num(b.amount), b.classification || 'Tetap', b.cash_only ? 1 : 0]
 app.post('/expenses', async (c) => {
+  const b = await c.req.json<Record<string, unknown>>()
+  if (PRIVATE_CATS.has(String(b.category)) && !(await ownerOk(c))) return c.json({ error: PRIVATE_MSG }, 403)
   await c.env.DB.prepare('INSERT INTO expenses (exp_date, category, description, amount, classification, cash_only) VALUES (?,?,?,?,?,?)')
-    .bind(...expVals(await c.req.json()))
+    .bind(...expVals(b))
     .run()
   return c.json({ ok: true })
 })
 app.put('/expenses/:id', async (c) => {
+  const b = await c.req.json<Record<string, unknown>>()
+  if ((PRIVATE_CATS.has(String(b.category)) || (await privateRow(c.env.DB, c.req.param('id')))) && !(await ownerOk(c))) return c.json({ error: PRIVATE_MSG }, 403)
   await c.env.DB.prepare('UPDATE expenses SET exp_date=?, category=?, description=?, amount=?, classification=?, cash_only=? WHERE id=?')
-    .bind(...expVals(await c.req.json()), c.req.param('id'))
+    .bind(...expVals(b), c.req.param('id'))
     .run()
   return c.json({ ok: true })
 })
 app.delete('/expenses/:id', async (c) => {
+  if ((await privateRow(c.env.DB, c.req.param('id'))) && !(await ownerOk(c))) return c.json({ error: PRIVATE_MSG }, 403)
   await c.env.DB.prepare('DELETE FROM expenses WHERE id = ?').bind(c.req.param('id')).run()
   return c.json({ ok: true })
 })

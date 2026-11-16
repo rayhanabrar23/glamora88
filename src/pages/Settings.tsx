@@ -29,6 +29,7 @@ export default function Settings() {
 }
 
 function SettingsBody() {
+  // dipasang setelah kunci owner terbuka, jadi data khusus owner (persen komisi) ikut terambil
   const refs = useRefs()
   return (
     <>

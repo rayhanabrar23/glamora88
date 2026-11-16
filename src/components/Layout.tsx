@@ -275,7 +275,9 @@ function UserMenu({ onLogout }: { onLogout: () => void }) {
   const ref = useClickOutside(() => setOpen(false))
   if (!user) return null
   const initials = user.name
+    .replace(/[^\p{L}\s]/gu, '')
     .split(/\s+/)
+    .filter(Boolean)
     .map((w) => w[0])
     .join('')
     .slice(0, 2)

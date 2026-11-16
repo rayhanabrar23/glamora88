@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import { api } from '../lib/api'
 import { useData } from '../lib/useData'
-import { Button, Callout, Card, Field, Input, Loading, PageHeader } from './ui'
+import { Button, Callout, Card, Field, Input, Loading, Modal, PageHeader } from './ui'
 import { Icon } from './Icon'
 
 /** Membungkus halaman khusus owner: minta kata sandi owner sebelum isi ditampilkan. */
@@ -57,6 +57,45 @@ export function OwnerGate({ title, children }: { title: string; children: ReactN
           )}
         </Card>
       </div>
+    </>
+  )
+}
+
+/** Tombol buka kunci owner di dalam halaman biasa (mis. untuk melihat gaji & komisi). */
+export function OwnerUnlockButton({ onUnlocked, label = 'Buka sebagai owner' }: { onUnlocked: () => void; label?: string }) {
+  const [open, setOpen] = useState(false)
+  const [pw, setPw] = useState('')
+  const [err, setErr] = useState('')
+  async function unlock(e: React.FormEvent) {
+    e.preventDefault()
+    setErr('')
+    try {
+      await api.post('/owner/login', { password: pw })
+      setOpen(false)
+      setPw('')
+      onUnlocked()
+    } catch (x) {
+      setErr((x as Error).message)
+    }
+  }
+  return (
+    <>
+      <Button icon="lock" onClick={() => setOpen(true)}>
+        {label}
+      </Button>
+      {open && (
+        <Modal open title="Buka kunci owner" onClose={() => setOpen(false)}>
+          <form className="flex flex-col gap-3" onSubmit={unlock}>
+            <Field label="Kata sandi owner">
+              <Input type="password" autoComplete="current-password" autoFocus value={pw} onChange={(e) => setPw(e.target.value)} />
+            </Field>
+            {err && <p className="text-[13px] text-bad">{err}</p>}
+            <Button variant="primary" type="submit" disabled={!pw}>
+              Buka kunci
+            </Button>
+          </form>
+        </Modal>
+      )}
     </>
   )
 }

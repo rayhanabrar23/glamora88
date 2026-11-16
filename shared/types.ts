@@ -15,6 +15,9 @@ export const EXPENSE_CATEGORIES = [
   'Lainnya',
 ] as const
 
+/** pos biaya yang hanya boleh dilihat & diubah owner */
+export const PRIVATE_EXPENSE_CATEGORIES = ['Gaji', 'Komisi']
+
 export const CLASSIFICATIONS = ['Tetap', 'Tetap (diskresioner)', 'Semi-variabel', 'Variabel'] as const
 export type Classification = (typeof CLASSIFICATIONS)[number]
 

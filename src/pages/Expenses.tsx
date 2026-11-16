@@ -1,5 +1,7 @@
 import { useMemo, useState } from 'react'
-import { CLASSIFICATIONS, EXPENSE_CATEGORIES, type Expense } from '../../shared/types'
+import { CLASSIFICATIONS, EXPENSE_CATEGORIES, PRIVATE_EXPENSE_CATEGORIES, type Expense } from '../../shared/types'
+import { Icon } from '../components/Icon'
+import { OwnerUnlockButton } from '../components/OwnerGate'
 import { api } from '../lib/api'
 import { dateLabel, monthLabel, rp, today } from '../lib/format'
 import { useData } from '../lib/useData'
@@ -35,6 +37,8 @@ const clsTone: Record<string, 'neutral' | 'gold' | 'info' | 'good'> = {
 
 export default function Expenses() {
   const { data, error, reload } = useData<Expense[]>('/expenses')
+  const { data: own, reload: reloadOwner } = useData<{ owner: boolean }>('/owner')
+  const isOwner = !!own?.owner
   const [form, setForm] = useState<Partial<Expense> | null>(null)
   const [month, setMonth] = useState('')
   const toast = useToast()
@@ -63,11 +67,28 @@ export default function Expenses() {
       <PageHeader
         title="Biaya Operasional"
         actions={
-          <Button variant="primary" icon="plus" onClick={() => setForm({ exp_date: today(), category: 'Gaji', classification: 'Semi-variabel', cash_only: 0 })}>
+          <Button
+            variant="primary"
+            icon="plus"
+            onClick={() => setForm(isOwner ? { exp_date: today(), category: 'Gaji', classification: 'Semi-variabel', cash_only: 0 } : { exp_date: today(), category: 'Listrik', classification: 'Tetap', cash_only: 0 })}
+          >
             Catat biaya
           </Button>
         }
       />
+      {own && !isOwner && (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-line-soft bg-white px-5 py-3.5">
+          <span className="flex items-center gap-2 text-[14px] text-ink-2">
+            <Icon name="lock" size={16} className="text-gold" /> Gaji dan komisi tim disembunyikan. Hanya owner yang bisa melihat dan mencatatnya.
+          </span>
+          <OwnerUnlockButton
+            onUnlocked={() => {
+              reloadOwner()
+              reload()
+            }}
+          />
+        </div>
+      )}
       <div className="grid gap-4 lg:grid-cols-[1.5fr_1fr]">
         <Card
           className="min-w-0"
@@ -126,6 +147,7 @@ export default function Expenses() {
         </Card>
         <Card title="Rekap per bulan">
           <div className="flex flex-col gap-3">
+            {!byMonth.length && <p className="text-[14px] text-muted">Belum ada biaya tercatat.</p>}
             {byMonth.map(([m, r]) => {
               const total = Object.values(r).reduce((a, b) => a + b, 0)
               return (
@@ -147,13 +169,13 @@ export default function Expenses() {
           </div>
         </Card>
       </div>
-      <TeamCommissionTable />
-      {form && <ExpenseForm initial={form} onClose={() => setForm(null)} onSaved={reload} />}
+      {isOwner && <TeamCommissionTable />}
+      {form && <ExpenseForm initial={form} isOwner={isOwner} onClose={() => setForm(null)} onSaved={reload} />}
     </>
   )
 }
 
-function ExpenseForm({ initial, onClose, onSaved }: { initial: Partial<Expense>; onClose: () => void; onSaved: () => void }) {
+function ExpenseForm({ initial, isOwner, onClose, onSaved }: { initial: Partial<Expense>; isOwner: boolean; onClose: () => void; onSaved: () => void }) {
   const [v, setV] = useState(initial)
   const toast = useToast()
   async function save() {
@@ -189,13 +211,13 @@ function ExpenseForm({ initial, onClose, onSaved }: { initial: Partial<Expense>;
           <Input type="number" value={v.amount ?? ''} onChange={(e) => setV({ ...v, amount: Number(e.target.value) })} />
         </Field>
         <Field label="Pos biaya">
-          <Select value={v.category ?? 'Gaji'} onChange={(e) => setV({ ...v, category: e.target.value })} options={[...EXPENSE_CATEGORIES]} />
+          <Select value={v.category ?? 'Gaji'} onChange={(e) => setV({ ...v, category: e.target.value })} options={EXPENSE_CATEGORIES.filter((c) => isOwner || !PRIVATE_EXPENSE_CATEGORIES.includes(c))} />
         </Field>
         <Field label="Klasifikasi">
           <Select value={v.classification ?? 'Tetap'} onChange={(e) => setV({ ...v, classification: e.target.value as Expense['classification'] })} options={[...CLASSIFICATIONS]} />
         </Field>
         <Field label="Keterangan" className="col-span-2">
-          <Input value={v.description ?? ''} onChange={(e) => setV({ ...v, description: e.target.value })} placeholder="Contoh: Gaji pokok Ica (admin) Oktober" />
+          <Input value={v.description ?? ''} onChange={(e) => setV({ ...v, description: e.target.value })} placeholder={isOwner ? 'Contoh: Gaji pokok Icha (admin) Oktober' : 'Contoh: Token listrik ruko November'} />
         </Field>
         <label className="col-span-2 flex items-start gap-3 rounded-xl bg-canvas px-4 py-3 text-[13.5px] text-ink-2">
           <input type="checkbox" className="mt-1 accent-[#1f2a44]" checked={!!v.cash_only} onChange={(e) => setV({ ...v, cash_only: e.target.checked ? 1 : 0 })} />

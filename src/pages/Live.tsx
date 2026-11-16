@@ -1,6 +1,13 @@
 import { useMemo, useState } from 'react'
 import { lateMinutes, type LiveReport, type LiveSession, type SuggestedSession } from '../../shared/live'
-import { parseTeamCommission } from '../../shared/commission'
+const teamNames = (raw: string | undefined): string[] => {
+  try {
+    const v = JSON.parse(raw ?? '[]')
+    return Array.isArray(v) ? v.map(String) : []
+  } catch {
+    return []
+  }
+}
 import { api, qs } from '../lib/api'
 import { dateLabel, int, pct, rp, today } from '../lib/format'
 import { useRefs } from '../lib/refs'
@@ -41,8 +48,8 @@ export default function Live() {
   const toast = useToast()
   // host dipilih dari daftar tim (Pengaturan › Komisi tim), ditambah nama lama yang sudah tercatat
   const hosts = useMemo(
-    () => [...new Set([...parseTeamCommission(refs.settings.team_commission).members.map((m) => m.name), ...((data?.sessions ?? []).map((s) => s.host).filter(Boolean) as string[])])],
-    [data, refs.settings.team_commission],
+    () => [...new Set([...teamNames(refs.settings.team_names), ...((data?.sessions ?? []).map((s) => s.host).filter(Boolean) as string[])])],
+    [data, refs.settings.team_names],
   )
 
   if (error) return <ErrorBox message={error} onRetry={reload} />
