@@ -303,6 +303,7 @@ function fmtActual(l: KpiLine) {
   if (d.type === 'checklist') return `${Math.round(l.actual * (d.items?.length ?? 0))}/${d.items?.length ?? 0} butir`
   if (d.type === 'manual') return l.actual.toLocaleString('id-ID')
   const m = d.metric ? METRICS[d.metric] : null
+  if (d.metric === 'live_ontime') return `${P(l.actual, 1)} sesi tepat waktu`
   if (m?.unit === 'pct') return P(l.actual, 1)
   if (m?.unit === 'pcs') return `${int(l.actual)} pcs`
   return `${int(l.actual)} sesi`
@@ -382,6 +383,7 @@ function StaffDetail({ r, rec, ctx, disabled, upd }: { r: KpiStaffResult; rec: K
                     ) : (
                       <span className="text-ink-2">
                         {m?.higherBetter ? '≥' : '≤'} {P(l.target, 1)}
+                        {d.metric === 'live_ontime' && <span className="block text-[12px] text-muted">telat maks. {d.toleranceMin ?? 10} mnt</span>}
                       </span>
                     )}
                   </td>
@@ -537,7 +539,12 @@ function Atur({ data, reload }: { data: KpiResponse; reload: () => void }) {
                             onChange={(e) => {
                               const metric = e.target.value as KpiMetric
                               const mm = METRICS[metric]
-                              setKpi(s.id, k.id, { metric, target: metric === 'live_sessions' ? 26 : mm.unit === 'pct' ? (mm.higherBetter ? 1 : 0.03) : mm.targetIsShare ? 1 : k.target, maxAchieve: mm.higherBetter && mm.unit !== 'pct' ? 1.5 : 1 })
+                              setKpi(s.id, k.id, {
+                                metric,
+                                target: metric === 'live_sessions' ? 26 : mm.unit === 'pct' ? (mm.higherBetter ? 1 : 0.03) : mm.targetIsShare ? 1 : k.target,
+                                maxAchieve: mm.higherBetter && mm.unit !== 'pct' && metric !== 'live_sessions' ? 1.5 : 1,
+                                toleranceMin: metric === 'live_ontime' ? (k.toleranceMin ?? 10) : undefined,
+                              })
                             }}
                           />
                         </Field>
@@ -572,7 +579,15 @@ function Atur({ data, reload }: { data: KpiResponse; reload: () => void }) {
                         <Textarea rows={Math.max(2, (k.items ?? []).length)} value={(k.items ?? []).join('\n')} onChange={(e) => setKpi(s.id, k.id, { items: e.target.value.split('\n') })} onBlur={(e) => setKpi(s.id, k.id, { items: e.target.value.split('\n').map((x) => x.trim()).filter(Boolean) })} />
                       </Field>
                     )}
-                    {k.type === 'manual' && <p className="mt-1.5 text-[12px] text-muted">Owner mengisi realisasi tiap bulan. Pencapaian = realisasi ÷ target (contoh: target 100 = 100% sesi tepat waktu).</p>}
+                    {k.type === 'manual' && <p className="mt-1.5 text-[12px] text-muted">Owner mengisi realisasi tiap bulan. Pencapaian = realisasi ÷ target.</p>}
+                    {k.type === 'auto' && k.metric === 'live_ontime' && (
+                      <div className="mt-2 flex flex-wrap items-end gap-3">
+                        <Field label="Toleransi telat (menit)" className="w-[170px]">
+                          <Input className="h-9 text-right" type="number" min={0} value={k.toleranceMin ?? 10} onChange={(e) => setKpi(s.id, k.id, { toleranceMin: Math.max(0, Number(e.target.value)) })} />
+                        </Field>
+                        <p className="pb-2 text-[12px] text-muted">Dari Sesi Live: jam mulai dibanding jam jadwal. Sesi tanpa jam jadwal tidak dihitung.</p>
+                      </div>
+                    )}
                   </div>
                 ))}
                 <div>

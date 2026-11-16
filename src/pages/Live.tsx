@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
-import type { LiveReport, LiveSession, SuggestedSession } from '../../shared/live'
+import { lateMinutes, type LiveReport, type LiveSession, type SuggestedSession } from '../../shared/live'
+import { parseTeamCommission } from '../../shared/commission'
 import { api, qs } from '../lib/api'
 import { dateLabel, int, pct, rp, today } from '../lib/format'
 import { useRefs } from '../lib/refs'
@@ -38,7 +39,11 @@ export default function Live() {
   const refs = useRefs()
   const [form, setForm] = useState<Partial<LiveSession> | null>(null)
   const toast = useToast()
-  const hosts = useMemo(() => [...new Set((data?.sessions ?? []).map((s) => s.host).filter(Boolean) as string[])], [data])
+  // host dipilih dari daftar tim (Pengaturan › Komisi tim), ditambah nama lama yang sudah tercatat
+  const hosts = useMemo(
+    () => [...new Set([...parseTeamCommission(refs.settings.team_commission).members.map((m) => m.name), ...((data?.sessions ?? []).map((s) => s.host).filter(Boolean) as string[])])],
+    [data, refs.settings.team_commission],
+  )
 
   if (error) return <ErrorBox message={error} onRetry={reload} />
   if (!data) return <Loading />
@@ -168,7 +173,13 @@ export default function Live() {
                     {hhmm(s.start_at)}–{hhmm(s.end_at)} <span className="text-muted">· {durLabel(s.duration_min)}</span>
                   </td>
                   <td className={td}>
-                    <div className="font-medium text-ink">{s.host || <span className="text-muted">Host belum diisi</span>}</div>
+                    <div className="font-medium text-ink">
+                      {s.host || <span className="text-muted">Host belum diisi</span>}
+                      {(() => {
+                        const l = lateMinutes(s)
+                        return l == null ? null : l > 0 ? <span className="ml-2 text-[12px] font-normal text-warn">telat {l} mnt</span> : <span className="ml-2 text-[12px] font-normal text-good">tepat waktu</span>
+                      })()}
+                    </div>
                     <div className="text-[12px] text-muted">
                       {s.store}
                       {s.title ? ` · ${s.title}` : ''}
@@ -221,13 +232,8 @@ function Suggestions({ items, hosts, onAdded }: { items: SuggestedSession[]; hos
         <>
           <div className="flex flex-wrap items-end gap-3 border-b border-line-soft px-5 py-4">
             <Field label="Host untuk sesi terpilih">
-              <Input list="hosts-list" className="h-9 w-[220px]" value={host} onChange={(e) => setHost(e.target.value)} placeholder="Opsional" />
+              <Select className="h-9 w-[220px]" value={host} onChange={(e) => setHost(e.target.value)} options={[{ value: '', label: 'Belum dipilih' }, ...hosts]} />
             </Field>
-            <datalist id="hosts-list">
-              {hosts.map((h) => (
-                <option key={h} value={h} />
-              ))}
-            </datalist>
             <Button onClick={() => setPicked(Object.fromEntries(items.map((_, i) => [i, true])))}>Pilih semua</Button>
             <Button variant="primary" icon="plus" disabled={!chosen.length} onClick={add}>
               Tambahkan {chosen.length || ''} sesi
@@ -272,6 +278,7 @@ function SessionForm({ initial, stores, hosts, onClose, onSaved }: { initial: Pa
   const [v, setV] = useState(initial)
   const toast = useToast()
   const set = (k: keyof LiveSession, val: unknown) => setV((x) => ({ ...x, [k]: val }))
+  const late = v.start_at ? lateMinutes({ start_at: v.start_at, scheduled_time: v.scheduled_time }) : null
   async function save() {
     try {
       if (v.id) await api.put(`/live/${v.id}`, v)
@@ -308,13 +315,12 @@ function SessionForm({ initial, stores, hosts, onClose, onSaved }: { initial: Pa
           <Select value={v.store ?? ''} onChange={(e) => set('store', e.target.value)} options={[{ value: '', label: 'Pilih…' }, ...stores]} />
         </Field>
         <Field label="Host">
-          <Input list="hosts-form" value={v.host ?? ''} onChange={(e) => set('host', e.target.value)} placeholder="Nama host" />
-          <datalist id="hosts-form">
-            {hosts.map((h) => (
-              <option key={h} value={h} />
-            ))}
-          </datalist>
+          <Select value={v.host ?? ''} onChange={(e) => set('host', e.target.value || null)} options={[{ value: '', label: 'Pilih host…' }, ...hosts]} />
         </Field>
+        <Field label="Jam jadwal" hint={late == null ? 'Jam live seharusnya mulai' : late > 0 ? `Mulai telat ${late} menit` : 'Mulai tepat waktu'}>
+          <Input type="time" value={v.scheduled_time ?? ''} onChange={(e) => set('scheduled_time', e.target.value || null)} />
+        </Field>
+        <div />
         <Field label="Judul / tema live" className="col-span-2">
           <Input value={v.title ?? ''} onChange={(e) => set('title', e.target.value)} placeholder="Contoh: Promo gajian, serba 150 rb" />
         </Field>

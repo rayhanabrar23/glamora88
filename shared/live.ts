@@ -10,6 +10,21 @@ export interface LiveSession {
   title: string | null
   viewers: number | null
   notes: string | null
+  /** jam mulai sesuai jadwal (HH:MM) */
+  scheduled_time?: string | null
+}
+
+/** Menit keterlambatan mulai live terhadap jadwal (negatif = lebih awal); null bila jadwal kosong. */
+export function lateMinutes(s: Pick<LiveSession, 'start_at' | 'scheduled_time'>): number | null {
+  if (!s.scheduled_time || !/^\d{2}:\d{2}$/.test(s.scheduled_time)) return null
+  const [h, m] = s.scheduled_time.split(':').map(Number)
+  const sh = Number(s.start_at.slice(11, 13))
+  const sm = Number(s.start_at.slice(14, 16))
+  let d = sh * 60 + sm - (h * 60 + m)
+  // jadwal larut malam yang mulai lewat tengah malam
+  if (d < -720) d += 1440
+  if (d > 720) d -= 1440
+  return d
 }
 
 export interface LiveSessionResult extends LiveSession {

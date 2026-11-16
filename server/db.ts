@@ -12,6 +12,9 @@ let schemaReady = false
 export async function ensureSchema(db: D1Database) {
   if (schemaReady) return
   await db.batch(SCHEMA.map((sql) => db.prepare(sql)))
+  // kolom tambahan untuk tabel lama
+  const liveCols = await db.prepare('PRAGMA table_info(live_sessions)').all<{ name: string }>()
+  if (!liveCols.results.some((c) => c.name === 'scheduled_time')) await db.prepare('ALTER TABLE live_sessions ADD COLUMN scheduled_time TEXT').run()
   const existing = await db.prepare('SELECT key FROM settings').all<{ key: string }>()
   const have = new Set(existing.results.map((r) => r.key))
   const missing = Object.entries(DEFAULT_SETTINGS).filter(([k]) => !have.has(k))

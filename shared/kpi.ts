@@ -1,7 +1,7 @@
 // KPI staf: definisi yang bisa diatur owner, catatan bulanan, dan perhitungan skor & faktor komisi.
 
 export type KpiType = 'auto' | 'checklist' | 'manual'
-export type KpiMetric = 'live_sessions' | 'live_pcs' | 'store_pcs' | 'cancel_return' | 'stock_diff' | 'sku_mapped'
+export type KpiMetric = 'live_sessions' | 'live_pcs' | 'live_ontime' | 'store_pcs' | 'cancel_return' | 'stock_diff' | 'sku_mapped'
 
 export interface KpiDef {
   id: string
@@ -17,6 +17,8 @@ export interface KpiDef {
   maxAchieve: number
   /** butir checklist (type 'checklist') */
   items?: string[]
+  /** toleransi telat (menit) untuk metrik live_ontime */
+  toleranceMin?: number
 }
 
 export interface KpiStaff {
@@ -69,7 +71,7 @@ export interface KpiContext {
   /** porsi qty penjualan yang sudah terpetakan ke SKU; null = tidak ada penjualan */
   skuMappedRate: number | null
   /** per nama host (huruf kecil) */
-  live: Record<string, { sessions: number; pcs: number; hours: number }>
+  live: Record<string, { sessions: number; pcs: number; hours: number; late?: number[] }>
   /** komisi dasar per nama anggota (sebelum KPI) */
   baseCommission: Record<string, number>
 }
@@ -77,6 +79,7 @@ export interface KpiContext {
 export const METRICS: Record<KpiMetric, { label: string; higherBetter: boolean; targetLabel: string; unit: 'count' | 'pcs' | 'pct'; targetIsShare?: boolean }> = {
   live_sessions: { label: 'Sesi live yang dijalankan', higherBetter: true, targetLabel: 'Sesi dijadwalkan', unit: 'count' },
   live_pcs: { label: 'Pcs terjual saat live host', higherBetter: true, targetLabel: '% dari target toko', unit: 'pcs', targetIsShare: true },
+  live_ontime: { label: 'Sesi live mulai tepat waktu', higherBetter: true, targetLabel: 'Minimal', unit: 'pct' },
   store_pcs: { label: 'Pcs terjual toko', higherBetter: true, targetLabel: '% dari target toko', unit: 'pcs', targetIsShare: true },
   cancel_return: { label: 'Pesanan batal & retur', higherBetter: false, targetLabel: 'Maksimal', unit: 'pct' },
   stock_diff: { label: 'Selisih stock opname', higherBetter: false, targetLabel: 'Maksimal', unit: 'pct' },
@@ -95,7 +98,7 @@ export const DEFAULT_KPI_CONFIG: KpiConfig = (() => {
     kpis: [
       { id: kid('live'), name: 'Live sesuai jadwal (1 bulan full)', type: 'auto', metric: 'live_sessions', weight: 30, target: 26, maxAchieve: 1 },
       { id: kid('pcs'), name: 'Pcs terjual saat live', type: 'auto', metric: 'live_pcs', weight: 50, target: 0.5, maxAchieve: 1.5 },
-      { id: kid('tepat'), name: 'Ketepatan waktu live', type: 'manual', weight: 20, target: 100, maxAchieve: 1 },
+      { id: kid('tepat'), name: 'Ketepatan waktu live', type: 'auto', metric: 'live_ontime', weight: 20, target: 1, maxAchieve: 1, toleranceMin: 10 },
     ],
   })
   return {
@@ -143,7 +146,14 @@ export function parseKpiConfig(raw: string | undefined | null): KpiConfig {
   try {
     const v = JSON.parse(raw) as KpiConfig
     if (!Array.isArray(v.staff)) return DEFAULT_KPI_CONFIG
-    return { cap: Number(v.cap) || 1.3, floor: Number.isFinite(Number(v.floor)) ? Number(v.floor) : 0.75, staff: v.staff }
+    // KPI ketepatan waktu versi lama (diisi manual) kini dihitung otomatis dari jam jadwal Sesi Live
+    const staff = v.staff.map((s) => ({
+      ...s,
+      kpis: (s.kpis ?? []).map((k) =>
+        k.type === 'manual' && /tepat waktu/i.test(k.name) ? { ...k, type: 'auto' as const, metric: 'live_ontime' as const, target: 1, maxAchieve: 1, toleranceMin: 10 } : k,
+      ),
+    }))
+    return { cap: Number(v.cap) || 1.3, floor: Number.isFinite(Number(v.floor)) ? Number(v.floor) : 0.75, staff }
   } catch {
     return DEFAULT_KPI_CONFIG
   }
@@ -193,7 +203,7 @@ export function computeKpi(cfg: KpiConfig, rec: KpiMonthRecord, ctx: KpiContext)
   return cfg.staff.map((st) => {
     const r = rec.staff[st.id] ?? {}
     const host = (st.hostName || st.name).trim().toLowerCase()
-    const live = ctx.live[host] ?? { sessions: 0, pcs: 0, hours: 0 }
+    const live = ctx.live[host] ?? { sessions: 0, pcs: 0, hours: 0, late: [] }
     const lines: KpiLine[] = st.kpis.map((d) => {
       const target = r.targets?.[d.id] ?? d.target
       let actual: number | null = null
@@ -224,6 +234,13 @@ export function computeKpi(cfg: KpiConfig, rec: KpiMonthRecord, ctx: KpiContext)
           case 'live_pcs':
             actual = live.pcs
             break
+          case 'live_ontime': {
+            const late = live.late ?? []
+            const tol = d.toleranceMin ?? 10
+            actual = late.length ? late.filter((x) => x <= tol).length / late.length : null
+            if (actual == null) reason = 'Belum ada sesi live dengan jam jadwal'
+            break
+          }
           case 'store_pcs':
             actual = ctx.storePcs
             break

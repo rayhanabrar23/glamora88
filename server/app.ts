@@ -7,7 +7,7 @@ import { DEFAULT_SETTINGS } from './schema'
 import { buildDashboard } from '../shared/dashboard'
 import { computeMonthly, computeStock, type DataBundle } from '../shared/metrics'
 import { commissionFor, parseTeamCommission, teamPct } from '../shared/commission'
-import { buildLiveReport } from '../shared/live'
+import { buildLiveReport, lateMinutes, type LiveSession } from '../shared/live'
 import type { ImportedSaleLine } from '../shared/types'
 
 const app = new Hono<{ Bindings: Env }>().basePath('/api')
@@ -666,7 +666,14 @@ async function kpiContexts(db: D1Database, months: string[], records: Record<str
     const adj = b.adjustments.filter((a) => a.adj_date.startsWith(m))
     const live: KpiContext['live'] = {}
     for (const h of buildLiveReport(liveRows.results as never, b.sales, buffer, m, m).hosts) {
-      live[h.host.trim().toLowerCase()] = { sessions: h.sessions, pcs: h.pcs, hours: h.hours }
+      live[h.host.trim().toLowerCase()] = { sessions: h.sessions, pcs: h.pcs, hours: h.hours, late: [] }
+    }
+    for (const s of liveRows.results as unknown as LiveSession[]) {
+      if (!s.start_at.startsWith(m)) continue
+      const late = lateMinutes(s)
+      const key = (s.host ?? '').trim().toLowerCase()
+      if (late == null || !live[key]) continue
+      live[key].late!.push(late)
     }
     const storeTargetDefault = proj?.volume?.[m] ?? null
     out[m] = {
@@ -795,6 +802,7 @@ const liveVals = (b: Record<string, unknown>) => [
   str(b.title),
   b.viewers === '' || b.viewers == null ? null : Math.round(num(b.viewers)),
   str(b.notes),
+  /^\d{2}:\d{2}$/.test(String(b.scheduled_time ?? '')) ? String(b.scheduled_time) : null,
 ]
 app.post('/live', async (c) => {
   const body = await c.req.json<Record<string, unknown> | Record<string, unknown>[]>()
@@ -802,13 +810,13 @@ app.post('/live', async (c) => {
   await runBatched(
     c.env.DB,
     rows.map((b) =>
-      c.env.DB.prepare('INSERT INTO live_sessions (start_at, duration_min, store, host, title, viewers, notes) VALUES (?,?,?,?,?,?,?)').bind(...liveVals(b)),
+      c.env.DB.prepare('INSERT INTO live_sessions (start_at, duration_min, store, host, title, viewers, notes, scheduled_time) VALUES (?,?,?,?,?,?,?,?)').bind(...liveVals(b)),
     ),
   )
   return c.json({ ok: true, added: rows.length })
 })
 app.put('/live/:id', async (c) => {
-  await c.env.DB.prepare('UPDATE live_sessions SET start_at=?, duration_min=?, store=?, host=?, title=?, viewers=?, notes=? WHERE id=?')
+  await c.env.DB.prepare('UPDATE live_sessions SET start_at=?, duration_min=?, store=?, host=?, title=?, viewers=?, notes=?, scheduled_time=? WHERE id=?')
     .bind(...liveVals(await c.req.json()), c.req.param('id'))
     .run()
   return c.json({ ok: true })

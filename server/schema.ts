@@ -114,7 +114,8 @@ export const SCHEMA: string[] = [
     host TEXT,
     title TEXT,
     viewers INTEGER,
-    notes TEXT
+    notes TEXT,
+    scheduled_time TEXT
   )`,
   `CREATE INDEX IF NOT EXISTS idx_live_start ON live_sessions(start_at)`,
   `CREATE TABLE IF NOT EXISTS settlements (
