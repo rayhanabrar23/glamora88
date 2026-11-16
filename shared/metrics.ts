@@ -1,4 +1,5 @@
 // Perhitungan kinerja bisnis. Dipakai oleh API (server) dan bisa diuji di Node.
+import { commissionFor, parseTeamCommission } from './commission'
 import type { Boost, Expense, Product, Purchase, PurchaseItem, Sale, StockAdjustment, Variant } from './types'
 
 export interface DataBundle {
@@ -109,6 +110,9 @@ export interface MonthRow {
   boost: number
   fixedCosts: number
   variableExpenses: number
+  /** komisi tim otomatis (persen pendapatan bersih), sudah termasuk di variableExpenses */
+  teamCommission: number
+  teamCommissionBy: Record<string, number>
   operatingProfit: number
   cashIn: number
   cashOutOps: number
@@ -264,6 +268,8 @@ export function computeMonthly(b: DataBundle, from?: string, to?: string): Month
         boost: 0,
         fixedCosts: 0,
         variableExpenses: 0,
+        teamCommission: 0,
+        teamCommissionBy: {},
         operatingProfit: 0,
         cashIn: 0,
         cashOutOps: 0,
@@ -316,9 +322,13 @@ export function computeMonthly(b: DataBundle, from?: string, to?: string): Month
     const r = rows.get(monthKey(x.boost_date))
     if (r) r.boost += boostCost(x)
   }
+  const team = parseTeamCommission(s.team_commission)
+  const autoTeam = team.members.length > 0
   for (const x of b.expenses) {
     const r = rows.get(monthKey(x.exp_date))
     if (!r) continue
+    // komisi tim sejak bulan mulai dihitung otomatis; catatan manual diabaikan agar tidak dobel
+    if (autoTeam && x.category === 'Komisi' && r.month >= team.start) continue
     r.cashOutOps += x.amount
     if (x.cash_only) continue
     if (x.classification === 'Variabel') r.variableExpenses += x.amount
@@ -333,6 +343,13 @@ export function computeMonthly(b: DataBundle, from?: string, to?: string): Month
   }
   let cum = 0
   for (const r of rows.values()) {
+    if (autoTeam) {
+      const c = commissionFor(team, r.month, r.omzetNet - r.platformFees)
+      r.teamCommission = c.total
+      r.teamCommissionBy = c.by
+      r.variableExpenses += c.total
+      r.cashOutOps += c.total
+    }
     r.contribution = r.omzetNet - r.hpp - r.platformFees - r.variableExpenses
     r.operatingProfit = r.contribution - r.fixedCosts - r.boost
     r.cashIn = r.omzetNet - r.platformFees

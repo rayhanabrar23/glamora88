@@ -3,7 +3,8 @@ import { Hono } from 'hono'
 import { checkPassword, clearSessionCookie, isAuthenticated, makeSessionCookie } from './auth'
 import { ensureSchema, getSettings, num, runBatched, type Env } from './db'
 import { buildDashboard } from '../shared/dashboard'
-import { computeStock, type DataBundle } from '../shared/metrics'
+import { computeMonthly, computeStock, type DataBundle } from '../shared/metrics'
+import { parseTeamCommission, teamPct } from '../shared/commission'
 import { buildLiveReport } from '../shared/live'
 import type { ImportedSaleLine } from '../shared/types'
 
@@ -571,13 +572,22 @@ app.get('/projection/base', async (c) => {
     if (omzetSettled > 0) actualFeePct = feeSum / omzetSettled
   }
   const boostMonths = months.filter((r) => r.omzetNet > 0)
+  const pcsPerOrder = orders ? pcs / orders : 1
+  // komisi tim per pcs: dari pengaturan persen per orang bila ada, selain itu rata-rata biaya variabel historis
+  const teamCommissionPerPcs = () => {
+    const tp = teamPct(parseTeamCommission(s.team_commission))
+    if (!tp) return pcs ? varExp / pcs : 0
+    const feePct = actualFeePct ?? num(s.platform_commission_pct, 0.08) + num(s.dynamic_commission_pct, 0.055)
+    const perOrder = actualFeePct != null ? 0 : num(s.order_processing_fee, 1250) + num(s.heavy_parcel_fee, 10000) * heavyShare
+    return Math.max(0, tp * (d.kpi.avgPrice * (1 - feePct) - perOrder / (pcsPerOrder || 1)))
+  }
   return c.json({
     avgPrice: d.kpi.avgPrice,
     landedCost: pcs ? hpp / pcs : num(s.fallback_landed_cost, 120000),
     commissionPct: actualFeePct ?? num(s.platform_commission_pct, 0.08) + num(s.dynamic_commission_pct, 0.055),
     perOrderFee: actualFeePct != null ? 0 : num(s.order_processing_fee, 1250) + num(s.heavy_parcel_fee, 10000) * heavyShare,
     feeSource: actualFeePct != null ? 'settlement' : 'tarif',
-    teamCommissionPerPcs: pcs ? varExp / pcs : 0,
+    teamCommissionPerPcs: teamCommissionPerPcs(),
     pcsPerOrder: orders ? pcs / orders : 1,
     openingStock: d.kpi.stockUnits,
     avgPcs: d.period.activeMonths ? pcs / d.period.activeMonths : 0,
@@ -589,6 +599,18 @@ app.get('/projection/base', async (c) => {
     contributionPct: d.kpi.contributionPct,
     saved: s.projection ? JSON.parse(s.projection) : null,
   })
+})
+
+// ---------- Komisi tim per orang per bulan ----------
+app.get('/team-commission', async (c) => {
+  const b = await loadBundle(c.env.DB)
+  const team = parseTeamCommission(b.settings.team_commission)
+  const rows = computeMonthly(b)
+    .filter((r) => r.month >= team.start)
+    .map((r) => ({ month: r.month, netRevenue: r.omzetNet - r.platformFees, total: r.teamCommission, by: r.teamCommissionBy }))
+    .reverse()
+  const ignored = b.expenses.filter((x) => team.members.length && x.category === 'Komisi' && x.exp_date.slice(0, 7) >= team.start).length
+  return c.json({ team, rows, ignored })
 })
 
 // ---------- Rencana restock ----------

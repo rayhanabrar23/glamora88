@@ -1,3 +1,4 @@
+import { DEFAULT_TEAM_COMMISSION } from '../shared/commission'
 // Skema database D1. Semua perintah idempoten (IF NOT EXISTS),
 // dijalankan otomatis saat API pertama kali dipanggil.
 export const SCHEMA: string[] = [
@@ -141,4 +142,5 @@ export const DEFAULT_SETTINGS: Record<string, string> = {
   fallback_landed_cost: '120000',
   business_name: 'Glamora88',
   live_attribution_buffer_min: '15',
+  team_commission: JSON.stringify(DEFAULT_TEAM_COMMISSION),
 }

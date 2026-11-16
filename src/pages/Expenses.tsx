@@ -3,9 +3,11 @@ import { CLASSIFICATIONS, EXPENSE_CATEGORIES, type Expense } from '../../shared/
 import { api } from '../lib/api'
 import { dateLabel, monthLabel, rp, today } from '../lib/format'
 import { useData } from '../lib/useData'
+import type { TeamCommission } from '../../shared/commission'
 import {
   Badge,
   Button,
+  Callout,
   Card,
   confirmDelete,
   Empty,
@@ -145,6 +147,7 @@ export default function Expenses() {
           </div>
         </Card>
       </div>
+      <TeamCommissionTable />
       {form && <ExpenseForm initial={form} onClose={() => setForm(null)} onSaved={reload} />}
     </>
   )
@@ -200,5 +203,62 @@ function ExpenseForm({ initial, onClose, onSaved }: { initial: Partial<Expense>;
         </label>
       </div>
     </Modal>
+  )
+}
+
+type TeamRow = { month: string; netRevenue: number; total: number; by: Record<string, number> }
+function TeamCommissionTable() {
+  const { data } = useData<{ team: TeamCommission; rows: TeamRow[]; ignored: number }>('/team-commission')
+  if (!data || !data.team.members.length) return null
+  const { team, rows, ignored } = data
+  return (
+    <div className="mt-4">
+      <Card
+        padded={false}
+        title="Komisi tim per bulan"
+        subtitle={`Dihitung otomatis mulai ${monthLabel(team.start, true)} · ${team.members.map((m) => `${m.name} ${Math.round(m.pct * 10000) / 100}%`).join(' · ')} dari pendapatan bersih`}
+      >
+        {ignored > 0 && (
+          <div className="px-5 pt-4">
+            <Callout tone="warning" title={`${ignored} catatan biaya "Komisi" sejak ${monthLabel(team.start, true)} tidak dihitung`}>
+              Komisi tim di bulan-bulan ini sudah dihitung otomatis dari pengaturan, jadi catatan manual diabaikan agar tidak dobel.
+            </Callout>
+          </div>
+        )}
+        {!rows.length ? (
+          <div className="p-5">
+            <Empty title="Belum ada penjualan sejak bulan mulai" />
+          </div>
+        ) : (
+          <Table
+            head={
+              <tr>
+                <th className={th}>Bulan</th>
+                <th className={`${th} text-right`}>Pendapatan bersih</th>
+                {team.members.map((m) => (
+                  <th key={m.name} className={`${th} text-right`}>
+                    {m.name}
+                  </th>
+                ))}
+                <th className={`${th} text-right`}>Total komisi</th>
+              </tr>
+            }
+          >
+            {rows.map((r) => (
+              <tr key={r.month}>
+                <td className={`${td} whitespace-nowrap font-medium text-ink`}>{monthLabel(r.month, true)}</td>
+                <td className={tdNum}>{rp(r.netRevenue)}</td>
+                {team.members.map((m) => (
+                  <td key={m.name} className={tdNum}>
+                    {rp(r.by[m.name] ?? 0)}
+                  </td>
+                ))}
+                <td className={`${tdNum} font-semibold`}>{rp(r.total)}</td>
+              </tr>
+            ))}
+          </Table>
+        )}
+      </Card>
+    </div>
   )
 }
