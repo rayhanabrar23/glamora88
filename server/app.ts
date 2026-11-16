@@ -680,6 +680,7 @@ async function kpiContexts(db: D1Database, months: string[], records: Record<str
       month: m,
       storeTarget: records[m]?.storeTarget ?? storeTargetDefault,
       storePcs: row?.pcsNet ?? 0,
+      netRevenue: row ? row.omzetNet - row.platformFees : 0,
       cancelReturnRate: qty ? bad / qty : null,
       stockDiffRate: adj.length ? adj.reduce((a, x) => a + Math.abs(x.qty_delta), 0) / Math.max(1, stockTotal) : null,
       skuMappedRate: qty ? mapped / qty : null,

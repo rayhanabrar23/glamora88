@@ -627,7 +627,7 @@ function Rows<T extends { id: string }>({ items, onChange, make, fields }: { ite
       {items.map((it) => (
         <div key={it.id} className="flex flex-wrap items-end gap-2 rounded-xl border border-line-soft p-3">
           {fields.map((f) => (
-            <label key={f.key} className={f.wide ? 'basis-full' : 'min-w-[110px] flex-1'}>
+            <label key={f.key} className={f.wide ? 'basis-full' : f.type === 'month' ? 'min-w-[165px] flex-1' : 'min-w-[110px] flex-1'}>
               <span className="mb-1 block text-[12px] text-muted">{f.label}</span>
               <Input
                 className="h-9"

@@ -64,6 +64,8 @@ export interface KpiContext {
   month: string
   storeTarget: number | null
   storePcs: number
+  /** omzet − potongan TikTok bulan ini (dasar komisi) */
+  netRevenue?: number
   /** (batal + retur) ÷ qty pesanan; null = tidak ada penjualan */
   cancelReturnRate: number | null
   /** selisih stock opname ÷ total stok; null = tidak ada opname bulan ini */

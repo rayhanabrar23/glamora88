@@ -304,31 +304,32 @@ function SessionForm({ initial, stores, hosts, onClose, onSaved }: { initial: Pa
         </>
       }
     >
-      <div className="grid grid-cols-2 gap-4">
-        <Field label="Mulai live">
+      <div className="grid grid-cols-1 items-start gap-4 sm:grid-cols-2">
+        <Field label="Host">
+          <Select value={v.host ?? ''} onChange={(e) => set('host', e.target.value || null)} options={[{ value: '', label: 'Pilih host…' }, ...hosts]} />
+        </Field>
+        <Field label="Toko">
+          <Select value={v.store ?? ''} onChange={(e) => set('store', e.target.value)} options={[{ value: '', label: 'Pilih…' }, ...stores]} />
+        </Field>
+        <Field label="Jam jadwal" hint="Jam live seharusnya mulai">
+          <Input type="time" value={v.scheduled_time ?? ''} onChange={(e) => set('scheduled_time', e.target.value || null)} />
+        </Field>
+        <Field
+          label="Mulai live (sebenarnya)"
+          hint={late == null ? 'Tanggal & jam live dimulai' : late > 0 ? <span className="text-warn">Telat {late} menit dari jadwal</span> : <span className="text-good">Tepat waktu</span>}
+        >
           <Input type="datetime-local" value={(v.start_at ?? '').slice(0, 16).replace(' ', 'T')} onChange={(e) => set('start_at', `${e.target.value.replace('T', ' ')}:00`)} />
         </Field>
         <Field label="Durasi (menit)">
           <Input type="number" min={5} step={5} value={v.duration_min ?? ''} onChange={(e) => set('duration_min', Number(e.target.value))} />
         </Field>
-        <Field label="Toko">
-          <Select value={v.store ?? ''} onChange={(e) => set('store', e.target.value)} options={[{ value: '', label: 'Pilih…' }, ...stores]} />
-        </Field>
-        <Field label="Host">
-          <Select value={v.host ?? ''} onChange={(e) => set('host', e.target.value || null)} options={[{ value: '', label: 'Pilih host…' }, ...hosts]} />
-        </Field>
-        <Field label="Jam jadwal" hint={late == null ? 'Jam live seharusnya mulai' : late > 0 ? `Mulai telat ${late} menit` : 'Mulai tepat waktu'}>
-          <Input type="time" value={v.scheduled_time ?? ''} onChange={(e) => set('scheduled_time', e.target.value || null)} />
-        </Field>
-        <div />
-        <Field label="Judul / tema live" className="col-span-2">
-          <Input value={v.title ?? ''} onChange={(e) => set('title', e.target.value)} placeholder="Contoh: Promo gajian, serba 150 rb" />
-        </Field>
         <Field label="Penonton (dari laporan LIVE)">
           <Input type="number" value={v.viewers ?? ''} onChange={(e) => set('viewers', e.target.value === '' ? null : Number(e.target.value))} />
         </Field>
-        <div />
-        <Field label="Catatan" className="col-span-2">
+        <Field label="Judul / tema live" className="sm:col-span-2">
+          <Input value={v.title ?? ''} onChange={(e) => set('title', e.target.value)} placeholder="Contoh: Promo gajian, serba 150 rb" />
+        </Field>
+        <Field label="Catatan" className="sm:col-span-2">
           <Textarea value={v.notes ?? ''} onChange={(e) => set('notes', e.target.value)} />
         </Field>
       </div>

@@ -234,13 +234,14 @@ export const tdNum = 'num px-3 py-3 text-right whitespace-nowrap first:pl-6 last
 
 export function Tabs<T extends string>({ value, onChange, items }: { value: T; onChange: (v: T) => void; items: { value: T; label: string }[] }) {
   return (
-    <div className="inline-flex rounded-full border border-line bg-white p-1">
+    <div className="inline-flex max-w-full overflow-x-auto rounded-full border border-line bg-white p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       {items.map((it) => (
         <button
           key={it.value}
+          type="button"
           onClick={() => onChange(it.value)}
           className={cx(
-            'rounded-full px-4 py-1.5 text-[13.5px] font-medium whitespace-nowrap transition-colors',
+            'shrink-0 rounded-full px-3 py-1.5 text-[13.5px] font-medium whitespace-nowrap transition-colors sm:px-4',
             value === it.value ? 'bg-navy text-white' : 'text-ink-2 hover:text-navy',
           )}
         >

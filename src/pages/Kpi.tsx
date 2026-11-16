@@ -118,15 +118,26 @@ function Rekap({ data, month, setMonth, reload }: { data: KpiResponse; month: st
   return (
     <>
       <Card>
-        <div className="flex flex-wrap items-end gap-3">
-          <Field label="Bulan" className="w-[180px]">
+        <div className="flex flex-wrap items-start gap-x-4 gap-y-3">
+          <Field label="Bulan" hint="Bulan yang dinilai" className="w-full sm:w-[190px]">
             <Input type="month" value={month} onChange={(e) => e.target.value && setMonth(e.target.value)} />
           </Field>
-          <Field label="Target penjualan toko (pcs)" hint={data.storeTargetDefault != null ? `Dari Proyeksi: ${int(data.storeTargetDefault)} pcs` : 'Dasar target pcs host & admin'} className="w-[230px]">
+          <Field
+            label="Target penjualan toko (pcs)"
+            hint={
+              ctx.storeTarget ? (
+                data.storeTargetDefault != null && rec.storeTarget == null ? `Dari Proyeksi Kas` : 'Dasar target pcs host & admin'
+              ) : (
+                <span className="text-warn">Isi agar KPI pcs ikut dihitung</span>
+              )
+            }
+            className="w-full sm:w-[230px]"
+          >
             <Input
               type="number"
               min={0}
               disabled={finalized}
+              placeholder="Contoh: 750"
               value={rec.storeTarget ?? data.storeTargetDefault ?? ''}
               onChange={(e) => {
                 setRec({ ...rec, storeTarget: e.target.value === '' ? null : Math.max(0, Number(e.target.value)) })
@@ -134,7 +145,7 @@ function Rekap({ data, month, setMonth, reload }: { data: KpiResponse; month: st
               }}
             />
           </Field>
-          <div className="ml-auto flex flex-wrap gap-2 pb-[22px]">
+          <div className="flex w-full flex-wrap gap-2 sm:ml-auto sm:w-auto sm:pt-[26px]">
             {!finalized && (
               <Button onClick={save} disabled={!dirty} icon="check">
                 {dirty ? 'Simpan' : 'Tersimpan'}
@@ -149,8 +160,26 @@ function Rekap({ data, month, setMonth, reload }: { data: KpiResponse; month: st
             )}
           </div>
         </div>
-        <div className="mt-1 text-[13.5px] text-ink-2">
-          Total komisi tim: dasar <span className="num font-semibold text-ink">{rp(totalBase)}</span> → setelah KPI <span className="num font-semibold text-navy">{rp(totalFinal)}</span>
+        <div className="mt-4 grid grid-cols-2 gap-3 border-t border-line-soft pt-4 sm:grid-cols-4">
+          <div>
+            <div className="text-[12.5px] text-muted">Pendapatan bersih bulan ini</div>
+            <div className="num text-[15px] font-semibold text-ink">{rp(ctx.netRevenue ?? 0)}</div>
+          </div>
+          <div>
+            <div className="text-[12.5px] text-muted">Komisi tim dasar</div>
+            <div className="num text-[15px] font-semibold text-ink">{rp(totalBase)}</div>
+          </div>
+          <div>
+            <div className="text-[12.5px] text-muted">Komisi tim setelah KPI</div>
+            <div className="num text-[15px] font-semibold text-navy">{rp(totalFinal)}</div>
+          </div>
+          <div>
+            <div className="text-[12.5px] text-muted">Selisih</div>
+            <div className={`num text-[15px] font-semibold ${totalFinal - totalBase < 0 ? 'text-bad' : totalFinal - totalBase > 0 ? 'text-good' : 'text-ink'}`}>
+              {totalFinal - totalBase > 0 ? '+' : ''}
+              {rp(totalFinal - totalBase)}
+            </div>
+          </div>
         </div>
         {finalized && (
           <div className="mt-3">
@@ -239,8 +268,8 @@ function AchBar({ l, floor }: { l: KpiLine; floor: number }) {
   const max = 1.5
   const a = l.achievement
   return (
-    <div className="grid grid-cols-[minmax(0,180px)_1fr_52px] items-center gap-2 text-[12.5px]">
-      <span className="truncate text-ink-2" title={l.def.name}>
+    <div className="grid grid-cols-[1fr_52px] items-center gap-x-2 gap-y-1 text-[12.5px] sm:grid-cols-[minmax(0,180px)_1fr_52px]">
+      <span className="col-span-2 truncate text-ink-2 sm:col-span-1" title={l.def.name}>
         {l.def.name}
       </span>
       <div className="relative h-3 rounded-full bg-line-soft">
@@ -430,6 +459,15 @@ const TYPE_OPTS: { value: KpiType; label: string }[] = [
 const METRIC_OPTS = (Object.keys(METRICS) as KpiMetric[]).map((k) => ({ value: k, label: METRICS[k].label }))
 // target disimpan sebagai pecahan untuk metrik persen/porsi, ditampilkan sebagai persen
 const isPctTarget = (d: KpiDef) => d.type === 'auto' && !!d.metric && (METRICS[d.metric].unit === 'pct' || !!METRICS[d.metric].targetIsShare)
+const targetHint = (d: KpiDef) => {
+  if (d.type === 'checklist') return 'semua butir'
+  if (d.type === 'manual') return 'angka'
+  if (!d.metric) return ''
+  const m = METRICS[d.metric]
+  if (d.metric === 'live_sessions') return 'sesi / bulan'
+  if (m.targetIsShare) return '% target toko'
+  return m.higherBetter ? 'minimal %' : 'maksimal %'
+}
 
 function Atur({ data, reload }: { data: KpiResponse; reload: () => void }) {
   const [cfg, setCfg] = useState<KpiConfig>(data.config)
@@ -515,11 +553,16 @@ function Atur({ data, reload }: { data: KpiResponse; reload: () => void }) {
               <div className="mt-4 flex flex-col gap-2">
                 {s.kpis.map((k) => (
                   <div key={k.id} className="rounded-xl border border-line-soft p-3">
-                    <div className="grid items-end gap-2 sm:grid-cols-2 lg:grid-cols-[1.6fr_1fr_1.3fr_100px_90px_100px_32px]">
-                      <Field label="Nama KPI">
-                        <Input className="h-9" value={k.name} onChange={(e) => setKpi(s.id, k.id, { name: e.target.value })} />
-                      </Field>
-                      <Field label="Jenis">
+                    <div className="grid grid-cols-6 items-start gap-x-2 gap-y-3 lg:grid-cols-12">
+                      <div className="col-span-6 flex items-end gap-2 lg:col-span-12">
+                        <Field label="Nama KPI" className="flex-1">
+                          <Input className="h-9" value={k.name} onChange={(e) => setKpi(s.id, k.id, { name: e.target.value })} />
+                        </Field>
+                        <div className="pb-0.5">
+                          <IconButton icon="trash" label="Hapus KPI" tone="danger" onClick={() => setStaff(s.id, { kpis: s.kpis.filter((x) => x.id !== k.id) })} />
+                        </div>
+                      </div>
+                      <Field label="Jenis" className="col-span-6 lg:col-span-3">
                         <Select
                           className="h-9"
                           value={k.type}
@@ -531,7 +574,7 @@ function Atur({ data, reload }: { data: KpiResponse; reload: () => void }) {
                         />
                       </Field>
                       {k.type === 'auto' ? (
-                        <Field label="Data">
+                        <Field label="Data" className="col-span-6 lg:col-span-4">
                           <Select
                             className="h-9"
                             value={k.metric ?? ''}
@@ -549,9 +592,9 @@ function Atur({ data, reload }: { data: KpiResponse; reload: () => void }) {
                           />
                         </Field>
                       ) : (
-                        <div className="hidden lg:block" />
+                        <div className="hidden lg:col-span-4 lg:block" />
                       )}
-                      <Field label={k.type === 'auto' && k.metric ? METRICS[k.metric].targetLabel : k.type === 'checklist' ? 'Target' : 'Target'}>
+                      <Field label="Target" hint={targetHint(k)} className="col-span-2 lg:col-span-2">
                         {k.type === 'checklist' ? (
                           <Input className="h-9" disabled value="Semua" />
                         ) : (
@@ -564,15 +607,12 @@ function Atur({ data, reload }: { data: KpiResponse; reload: () => void }) {
                           />
                         )}
                       </Field>
-                      <Field label="Bobot %">
+                      <Field label="Bobot %" hint="dari skor" className="col-span-2 lg:col-span-1">
                         <Input className="h-9 text-right" type="number" min={0} value={k.weight} onChange={(e) => setKpi(s.id, k.id, { weight: Math.max(0, Number(e.target.value)) })} />
                       </Field>
-                      <Field label="Maks capai %">
+                      <Field label="Maks capai %" hint="batas lampaui" className="col-span-2 lg:col-span-2">
                         <Input className="h-9 text-right" type="number" min={100} value={Math.round(k.maxAchieve * 100)} onChange={(e) => setKpi(s.id, k.id, { maxAchieve: Math.max(1, Number(e.target.value) / 100) })} />
                       </Field>
-                      <div className="pb-0.5">
-                        <IconButton icon="trash" label="Hapus KPI" tone="danger" onClick={() => setStaff(s.id, { kpis: s.kpis.filter((x) => x.id !== k.id) })} />
-                      </div>
                     </div>
                     {k.type === 'checklist' && (
                       <Field label="Butir checklist (satu per baris)" className="mt-2">
