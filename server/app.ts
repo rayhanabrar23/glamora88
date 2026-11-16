@@ -2,6 +2,7 @@ import { computeRestock, DEFAULT_RESTOCK, type RestockParams } from '../shared/r
 import { Hono } from 'hono'
 import { checkPassword, clearSessionCookie, isAuthenticated, makeSessionCookie } from './auth'
 import { ensureSchema, getSettings, num, runBatched, type Env } from './db'
+import { DEFAULT_SETTINGS } from './schema'
 import { buildDashboard } from '../shared/dashboard'
 import { computeMonthly, computeStock, type DataBundle } from '../shared/metrics'
 import { parseTeamCommission, teamPct } from '../shared/commission'
@@ -685,6 +686,25 @@ app.get('/data/export', async (c) => {
   for (const t of TABLES) out[t] = (await c.env.DB.prepare(`SELECT * FROM ${t}`).all()).results
   c.header('Content-Disposition', `attachment; filename="glamora88-cadangan-${new Date().toISOString().slice(0, 10)}.json"`)
   return c.json({ version: 1, exported_at: new Date().toISOString(), tables: out })
+})
+
+// Reset data: hapus isi tabel. keepSetup = pertahankan pengaturan, toko, produk, varian & pemetaan SKU.
+const SETUP_TABLES = ['settings', 'stores', 'products', 'variants', 'sku_map']
+app.post('/data/reset', async (c) => {
+  const body = await c.req.json<{ confirm?: string; keepSetup?: boolean }>().catch(() => ({}) as { confirm?: string; keepSetup?: boolean })
+  if (body.confirm !== 'RESET') return c.json({ error: 'Konfirmasi tidak cocok' }, 400)
+  const db = c.env.DB
+  const targets = [...TABLES].reverse().filter((t) => !(body.keepSetup && SETUP_TABLES.includes(t)))
+  const counts: Record<string, number> = {}
+  for (const t of targets) {
+    const r = await db.prepare(`DELETE FROM ${t}`).run()
+    counts[t] = r.meta.changes ?? 0
+  }
+  if (!body.keepSetup) {
+    // pengaturan kembali ke nilai bawaan
+    await db.batch(Object.entries(DEFAULT_SETTINGS).map(([k, v]) => db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').bind(k, v)))
+  }
+  return c.json({ ok: true, counts })
 })
 
 app.post('/data/import', async (c) => {

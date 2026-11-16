@@ -291,6 +291,7 @@ function DataTools() {
           </label>
         </div>
       </div>
+      <ResetData />
       {result && (
         <div className="mt-4">
           <Callout tone="good" title="Impor selesai">
@@ -301,5 +302,48 @@ function DataTools() {
         </div>
       )}
     </Card>
+  )
+}
+
+function ResetData() {
+  const toast = useToast()
+  const [keepSetup, setKeepSetup] = useState(true)
+  const [busy, setBusy] = useState(false)
+  async function reset() {
+    const what = keepSetup
+      ? 'Semua penjualan, pencairan, pembelian, stok opname, boost, biaya, dan sesi live akan DIHAPUS. Pengaturan, toko, produk, dan pemetaan SKU tetap ada.'
+      : 'SELURUH isi portal akan DIHAPUS, termasuk pengaturan, toko, produk, dan pemetaan SKU. Pengaturan kembali ke nilai bawaan.'
+    const typed = window.prompt(`${what}\n\nData yang dihapus tidak bisa dikembalikan kecuali dari file cadangan. Unduh cadangan dulu bila perlu.\n\nKetik RESET untuk melanjutkan:`)
+    if (typed === null) return
+    if (typed.trim() !== 'RESET') {
+      toast('Reset dibatalkan: ketik RESET dengan huruf besar', 'bad')
+      return
+    }
+    setBusy(true)
+    try {
+      await api.post('/data/reset', { confirm: 'RESET', keepSetup })
+      toast('Data sudah direset')
+      window.dispatchEvent(new Event('g88:refresh'))
+      setTimeout(() => window.location.reload(), 600)
+    } catch (e) {
+      toast((e as Error).message, 'bad')
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <div className="mt-4 rounded-xl border border-line-soft p-4">
+      <div className="font-medium text-ink">Reset data</div>
+      <p className="mt-1 text-[13.5px] text-ink-2">Mengosongkan portal untuk mulai input dari awal. Unduh cadangan dulu agar bisa dikembalikan lewat Impor data.</p>
+      <label className="mt-3 flex items-start gap-3 text-[13.5px] text-ink-2">
+        <input type="checkbox" className="mt-1 accent-[#1f2a44]" checked={keepSetup} onChange={(e) => setKeepSetup(e.target.checked)} />
+        <span>Pertahankan pengaturan, toko, produk, dan pemetaan SKU</span>
+      </label>
+      <div className="mt-3">
+        <Button variant="danger" icon="trash" onClick={reset} disabled={busy}>
+          {busy ? 'Mereset…' : 'Reset data'}
+        </Button>
+      </div>
+    </div>
   )
 }
