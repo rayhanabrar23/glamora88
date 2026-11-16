@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { DEFAULT_RESTOCK, Z_OF, type RestockParams, type RestockResult, type RestockRow, type RestockStatus } from '../../shared/restock'
 import { api, qs } from '../lib/api'
 import { dateLabel, int, rp } from '../lib/format'
@@ -25,6 +26,7 @@ export default function RestockPlan() {
   const [howTo, setHowTo] = useState(true)
   const { data, error, reload } = useData<Res>(`/restock${query}`)
   const toast = useToast()
+  const navigate = useNavigate()
   useEffect(() => {
     if (data && !p) setP(data.params)
   }, [data, p])
@@ -139,6 +141,25 @@ export default function RestockPlan() {
         <Stat icon="stock" label="Deadstock" value={`${int(sum(dead, (r) => r.onHand))} pcs`} hint={dead.length ? `${dead.length} SKU · ${rp(sum(dead, (r) => r.onHand * r.landed), { compact: true })} tertahan` : 'Tidak ada'} />
         <Stat icon="sales" label="Laju jual dipakai" value={`${int(sum(rows, (r) => r.daily) * 30)} pcs/bln`} hint={p.targetMonthly ? 'Target' : 'Aktual di jendela data'} />
       </div>
+
+      {toOrder.length > 0 && (
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-line-soft bg-white px-5 py-3.5">
+          <span className="text-[14px] text-ink-2">
+            {toOrder.length} SKU perlu dipesan, total {int(sum(toOrder, (r) => r.orderQty))} pcs. Jadikan draft batch untuk diperiksa sebelum disimpan.
+          </span>
+          <Button
+            variant="primary"
+            icon="purchase"
+            onClick={() =>
+              navigate('/pembelian', {
+                state: { draft: toOrder.map((r) => ({ sku: r.sku, qty: r.orderQty, price_cny: r.buyCny != null ? Math.round(r.buyCny * 100) / 100 : '' })) },
+              })
+            }
+          >
+            Buat batch dari saran
+          </Button>
+        </div>
+      )}
 
       <div className="mt-4">
         <Card padded={false}>

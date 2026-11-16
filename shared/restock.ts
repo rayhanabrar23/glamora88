@@ -32,6 +32,8 @@ export interface RestockRow {
   onHand: number
   inTransit: number
   landed: number
+  /** harga beli terakhir (CNY) untuk draft batch */
+  buyCny: number | null
   soldWindow: number
   /** laju jual per hari (sudah diskalakan ke target bila ada) */
   daily: number
@@ -115,6 +117,7 @@ export function computeRestock(b: DataBundle, p: RestockParams, todayIso: string
       onHand,
       inTransit: r.inTransit,
       landed: r.landed,
+      buyCny: r.buyCny,
       soldWindow: sold,
       daily,
       sigma,

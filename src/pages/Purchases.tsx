@@ -1,4 +1,5 @@
-import { Fragment, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { PURCHASE_STATUSES, type Purchase, type PurchaseItem } from '../../shared/types'
 import { api } from '../lib/api'
 import { dateLabel, int, rp, today } from '../lib/format'
@@ -52,6 +53,25 @@ export default function Purchases() {
   const [form, setForm] = useState<Form | null>(null)
   const toast = useToast()
   const fallback = Number(refs.settings.fallback_landed_cost || 120000)
+  const location = useLocation()
+  const navigate = useNavigate()
+  // draft dari Rencana restock: buka form batch baru yang sudah terisi
+  useEffect(() => {
+    const draft = (location.state as { draft?: Form['items'] } | null)?.draft
+    if (!draft || !data) return
+    const last = [...data.purchases].sort((a, b) => b.order_date.localeCompare(a.order_date))[0]
+    setForm({
+      name: `Batch ${data.purchases.length + 1}`,
+      order_date: today(),
+      status: 'Dipesan',
+      exchange_rate: last?.exchange_rate || 3000,
+      cargo_cost: 0,
+      other_cost: 0,
+      notes: 'Dari saran Rencana restock',
+      items: draft,
+    })
+    navigate(location.pathname, { replace: true, state: null })
+  }, [location.state, data]) // eslint-disable-line react-hooks/exhaustive-deps
   if (error) return <ErrorBox message={error} onRetry={reload} />
   if (!data) return <Loading />
   const itemsOf = (id: number) => data.items.filter((i) => i.purchase_id === id)

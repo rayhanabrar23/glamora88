@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { addMonths, normalizeScenario, projectionMonths, runProjection, upgradeScenario, type CostItem, type Fund, type OneOff, type Restock, type Scenario } from '../../shared/projection'
 import type { StockRow } from '../../shared/metrics'
+import type { RestockResult } from '../../shared/restock'
+import { planRestockBySku } from '../../shared/restockPlan'
 import { api } from '../lib/api'
 import { int, monthLabel, pct, rp, thisMonth } from '../lib/format'
 import { useData } from '../lib/useData'
@@ -67,6 +69,7 @@ function defaultScenario(b: Base): Scenario {
 export default function Projection() {
   const { data: base, error, reload } = useData<Base>('/projection/base')
   const { data: stock } = useData<StockRow[]>('/stock')
+  const { data: restockData } = useData<RestockResult>('/restock')
   const [s, setS] = useState<Scenario | null>(null)
   const [dirty, setDirty] = useState(false)
   const toast = useToast()
@@ -310,7 +313,7 @@ export default function Projection() {
             </Field>
           )}
           {s.restockMode === 'manual' ? (
-            <RestockPlan items={s.restocks} months={months} stock={stock ?? []} fallbackCost={s.landedCost} onChange={(restocks) => upd({ restocks })} />
+            <RestockPlan items={s.restocks} months={months} stock={stock ?? []} fallbackCost={s.landedCost} onChange={(restocks) => upd({ restocks })} volume={s.volume} restockData={restockData ?? null} />
           ) : (
             <MonthChips months={months} value={(m) => s.restocks.filter((x) => x.month === m).reduce((a, x) => a + x.pcs, 0)} />
           )}
@@ -462,7 +465,53 @@ export default function Projection() {
   )
 }
 
-function RestockPlan({ items, months, stock, fallbackCost, onChange }: { items: Restock[]; months: string[]; stock: StockRow[]; fallbackCost: number; onChange: (v: Restock[]) => void }) {
+function AutoFill({ months, volume, restockData, hasItems, onFill }: { months: string[]; volume: Record<string, number>; restockData: RestockResult | null; hasItems: boolean; onFill: (v: Restock[]) => void }) {
+  const [safetyPct, setSafetyPct] = useState(35)
+  const [roundTo, setRoundTo] = useState(5)
+  const toast = useToast()
+  const rows = restockData?.rows ?? []
+  const sold = rows.reduce((a, r) => a + r.soldWindow, 0)
+  function fill() {
+    if (!sold) {
+      toast('Belum ada data penjualan untuk menghitung porsi tiap SKU', 'bad')
+      return
+    }
+    if (hasItems && !window.confirm('Rencana restock yang ada akan diganti dengan hasil isi otomatis. Lanjutkan?')) return
+    const lines = planRestockBySku(
+      months,
+      volume,
+      rows.map((r) => ({ sku: r.sku, sold: r.soldWindow, stock: r.onHand + r.inTransit, landed: r.landed, skip: r.status === 'deadstock' || r.status === 'lambat' })),
+      { safetyPct: safetyPct / 100, roundTo },
+    )
+    onFill(lines.map((l) => ({ id: uid(), month: l.month, sku: l.sku, pcs: l.pcs, costPerPcs: l.costPerPcs })))
+    toast(`${lines.length} baris restock dibuat dari target penjualan`)
+  }
+  return (
+    <div className="rounded-2xl bg-canvas/70 p-3.5">
+      <div className="text-[13.5px] font-medium text-ink">Isi otomatis per SKU</div>
+      <p className="mt-0.5 text-[12.5px] text-muted">
+        Target pcs tiap bulan dibagi ke SKU sesuai porsi lakunya
+        {restockData ? ` (penjualan ${dateLabelShort(restockData.windowFrom)} – ${dateLabelShort(restockData.asOf)})` : ''}. SKU deadstock dan lambat tidak direstock. Hasilnya bisa diedit.
+      </p>
+      <div className="mt-2.5 flex flex-wrap items-end gap-2">
+        <label className="w-[170px]">
+          <span className="mb-1 block text-[12px] text-muted">Stok pengaman (% bulan depan)</span>
+          <Input className="h-9 text-right" type="number" min={0} value={safetyPct} onChange={(e) => setSafetyPct(Math.max(0, Number(e.target.value) || 0))} />
+        </label>
+        <label className="w-[120px]">
+          <span className="mb-1 block text-[12px] text-muted">Bulatkan ke</span>
+          <Input className="h-9 text-right" type="number" min={1} value={roundTo} onChange={(e) => setRoundTo(Math.max(1, Number(e.target.value) || 1))} />
+        </label>
+        <Button variant="primary" icon="product" onClick={fill} disabled={!restockData}>
+          Isi otomatis per SKU
+        </Button>
+      </div>
+    </div>
+  )
+}
+const dateLabelShort = (d: string) => new Date(`${d}T00:00:00`).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })
+
+function RestockPlan({ items, months, stock, fallbackCost, onChange, volume, restockData }: { items: Restock[]; months: string[]; stock: StockRow[]; fallbackCost: number; onChange: (v: Restock[]) => void; volume: Record<string, number>; restockData: RestockResult | null }) {
   const skus = stock.filter((r) => r.tracked && r.category !== 'Kemasan')
   const bySku = new Map(skus.map((r) => [r.sku, r]))
   const options = [
@@ -478,6 +527,7 @@ function RestockPlan({ items, months, stock, fallbackCost, onChange }: { items: 
   const copyTo = (from: string, to: string) => onChange([...items, ...items.filter((x) => x.month === from).map((x) => ({ ...x, id: uid(), month: to }))])
   return (
     <div className="flex flex-col gap-3">
+      <AutoFill months={months} volume={volume} restockData={restockData} hasItems={items.length > 0} onFill={onChange} />
       {!used.length && <p className="text-[13.5px] text-muted">Belum ada rencana restock.</p>}
       {used.map((m) => {
         const lines = items.filter((x) => x.month === m)
