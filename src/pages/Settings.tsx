@@ -6,6 +6,7 @@ import { useData } from '../lib/useData'
 import { Button, Callout, Card, confirmDelete, Field, IconButton, Input, PageHeader, Select, Table, td, tdNum, th, useToast } from '../components/ui'
 import type { Store } from '../../shared/types'
 import { parseTeamCommission, type TeamMember } from '../../shared/commission'
+import { lockOwner, OwnerGate } from '../components/OwnerGate'
 
 const FIELDS: { key: string; label: string; hint: string; kind: 'pct' | 'rp' | 'num' }[] = [
   { key: 'platform_commission_pct', label: 'Komisi platform', hint: 'Persen dari harga jual', kind: 'pct' },
@@ -20,19 +21,31 @@ const FIELDS: { key: string; label: string; hint: string; kind: 'pct' | 'rp' | '
 ]
 
 export default function Settings() {
+  return (
+    <OwnerGate title="Pengaturan">
+      <SettingsBody />
+    </OwnerGate>
+  )
+}
+
+function SettingsBody() {
   const refs = useRefs()
   return (
     <>
-      <PageHeader title="Pengaturan" />
+      <PageHeader
+        title="Pengaturan"
+        actions={
+          <Button icon="lock" onClick={lockOwner}>
+            Kunci
+          </Button>
+        }
+      />
       <div className="grid gap-4 lg:grid-cols-2">
         <Rates settings={refs.settings} onSaved={refs.reload} />
         <Stores onChange={refs.reload} />
       </div>
       <div className="mt-4">
         <TeamCommissionCard raw={refs.settings.team_commission} onSaved={refs.reload} />
-      </div>
-      <div className="mt-4">
-        <SkuMapping skuOptions={refs.skuOptions} />
       </div>
       <div className="mt-4">
         <DataTools />
@@ -178,7 +191,7 @@ function Stores({ onChange }: { onChange: () => void }) {
 }
 
 type Unmapped = { platform_sku_id: string; product_name: string; variation: string; store: string; lines: number; qty: number }
-function SkuMapping({ skuOptions }: { skuOptions: { value: string; label: string }[] }) {
+export function SkuMapping({ skuOptions }: { skuOptions: { value: string; label: string }[] }) {
   const { data, reload } = useData<{ map: unknown[]; unmapped: Unmapped[] }>('/sku-map')
   const [choice, setChoice] = useState<Record<string, string>>({})
   const toast = useToast()

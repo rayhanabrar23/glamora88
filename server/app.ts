@@ -1,11 +1,12 @@
 import { computeRestock, DEFAULT_RESTOCK, type RestockParams } from '../shared/restock'
 import { Hono } from 'hono'
-import { checkPassword, clearSessionCookie, isAuthenticated, makeSessionCookie } from './auth'
+import { checkOwnerPassword, checkPassword, clearOwnerCookie, clearSessionCookie, isAuthenticated, isOwner, makeOwnerCookie, makeSessionCookie } from './auth'
+import { computeKpi, kpiMonthKey, parseKpiConfig, parseKpiMonth, type KpiConfig, type KpiContext, type KpiMonthRecord } from '../shared/kpi'
 import { ensureSchema, getSettings, num, runBatched, type Env } from './db'
 import { DEFAULT_SETTINGS } from './schema'
 import { buildDashboard } from '../shared/dashboard'
 import { computeMonthly, computeStock, type DataBundle } from '../shared/metrics'
-import { parseTeamCommission, teamPct } from '../shared/commission'
+import { commissionFor, parseTeamCommission, teamPct } from '../shared/commission'
 import { buildLiveReport } from '../shared/live'
 import type { ImportedSaleLine } from '../shared/types'
 
@@ -36,6 +37,28 @@ app.use('*', async (c, next) => {
   if (!c.env.DB) return c.json({ error: 'Database D1 belum terhubung (binding "DB"). Lihat README.' }, 503)
   await ensureSchema(c.env.DB)
   return next()
+})
+
+// ---------- Kunci owner (KPI, pengaturan, data) ----------
+const ownerOnly = (path: string, method: string) =>
+  path.startsWith('/api/kpi') || path.startsWith('/api/data/') || (path.startsWith('/api/stores') && method !== 'GET')
+app.use('*', async (c, next) => {
+  if (ownerOnly(c.req.path, c.req.method) && !(await isOwner(c.req.header('Cookie'), c.env))) {
+    return c.json({ error: c.env.OWNER_PASSWORD ? 'Bagian ini hanya untuk owner. Buka kunci dengan kata sandi owner.' : 'OWNER_PASSWORD belum diatur di Cloudflare.' }, 403)
+  }
+  return next()
+})
+app.get('/owner', async (c) => c.json({ owner: await isOwner(c.req.header('Cookie'), c.env), configured: !!c.env.OWNER_PASSWORD }))
+app.post('/owner/login', async (c) => {
+  if (!c.env.OWNER_PASSWORD) return c.json({ error: 'OWNER_PASSWORD belum diatur di Cloudflare.' }, 503)
+  const body = await c.req.json<{ password?: string }>().catch(() => ({ password: '' }))
+  if (!checkOwnerPassword(body.password ?? '', c.env)) return c.json({ error: 'Kata sandi owner salah' }, 403)
+  c.header('Set-Cookie', await makeOwnerCookie(c.env))
+  return c.json({ ok: true })
+})
+app.post('/owner/logout', (c) => {
+  c.header('Set-Cookie', clearOwnerCookie())
+  return c.json({ ok: true })
 })
 
 app.get('/me', (c) => c.json({ ok: true }))
@@ -116,10 +139,19 @@ app.delete('/stock/adjustments/:id', async (c) => {
 // ---------- Pengaturan & toko ----------
 app.get('/settings', async (c) => {
   const stores = await c.env.DB.prepare('SELECT * FROM stores ORDER BY id').all()
-  return c.json({ settings: await getSettings(c.env.DB), stores: stores.results })
+  const all = await getSettings(c.env.DB)
+  // catatan KPI hanya untuk owner
+  const settings = Object.fromEntries(Object.entries(all).filter(([k]) => !k.startsWith('kpi_')))
+  return c.json({ settings, stores: stores.results })
 })
+// kunci yang boleh diubah staf (skenario proyeksi & restock); selebihnya hanya owner
+const STAFF_SETTING_KEYS = new Set(['projection', 'restock'])
 app.put('/settings', async (c) => {
   const body = await c.req.json<Record<string, string>>()
+  if (Object.keys(body).some((k) => !STAFF_SETTING_KEYS.has(k)) && !(await isOwner(c.req.header('Cookie'), c.env))) {
+    return c.json({ error: 'Pengaturan hanya bisa diubah owner. Buka kunci dengan kata sandi owner.' }, 403)
+  }
+  if (Object.keys(body).some((k) => k.startsWith('kpi_'))) return c.json({ error: 'Gunakan menu KPI' }, 400)
   await runBatched(
     c.env.DB,
     Object.entries(body).map(([k, v]) =>
@@ -612,6 +644,114 @@ app.get('/team-commission', async (c) => {
     .reverse()
   const ignored = b.expenses.filter((x) => team.members.length && x.category === 'Komisi' && x.exp_date.slice(0, 7) >= team.start).length
   return c.json({ team, rows, ignored })
+})
+
+// ---------- KPI staf (khusus owner) ----------
+async function kpiContexts(db: D1Database, months: string[], records: Record<string, KpiMonthRecord>) {
+  const [b, liveRows] = await Promise.all([loadBundle(db), db.prepare('SELECT * FROM live_sessions').all()])
+  const monthly = new Map(computeMonthly(b).map((r) => [r.month, r]))
+  const team = parseTeamCommission(b.settings.team_commission)
+  const proj = b.settings.projection ? (JSON.parse(b.settings.projection) as { volume?: Record<string, number> }) : null
+  const stockTotal = computeStock(b)
+    .filter((r) => r.tracked)
+    .reduce((a, r) => a + Math.max(0, r.onHand), 0)
+  const buffer = num(b.settings.live_attribution_buffer_min, 15)
+  const out: Record<string, KpiContext> = {}
+  for (const m of months) {
+    const row = monthly.get(m)
+    const sales = b.sales.filter((s) => s.order_date.startsWith(m))
+    const qty = sales.reduce((a, s) => a + s.qty, 0)
+    const bad = sales.reduce((a, s) => a + s.cancel_qty + s.return_qty, 0)
+    const mapped = sales.filter((s) => s.sku).reduce((a, s) => a + s.qty, 0)
+    const adj = b.adjustments.filter((a) => a.adj_date.startsWith(m))
+    const live: KpiContext['live'] = {}
+    for (const h of buildLiveReport(liveRows.results as never, b.sales, buffer, m, m).hosts) {
+      live[h.host.trim().toLowerCase()] = { sessions: h.sessions, pcs: h.pcs, hours: h.hours }
+    }
+    const storeTargetDefault = proj?.volume?.[m] ?? null
+    out[m] = {
+      month: m,
+      storeTarget: records[m]?.storeTarget ?? storeTargetDefault,
+      storePcs: row?.pcsNet ?? 0,
+      cancelReturnRate: qty ? bad / qty : null,
+      stockDiffRate: adj.length ? adj.reduce((a, x) => a + Math.abs(x.qty_delta), 0) / Math.max(1, stockTotal) : null,
+      skuMappedRate: qty ? mapped / qty : null,
+      live,
+      baseCommission: row ? commissionFor(team, m, row.omzetNet - row.platformFees).by : {},
+    }
+  }
+  return { out, settings: b.settings, team, proj }
+}
+const prevMonths = (m: string, n: number) => {
+  const out: string[] = []
+  let [y, mm] = m.split('-').map(Number)
+  for (let i = 0; i < n; i++) {
+    out.unshift(`${y}-${String(mm).padStart(2, '0')}`)
+    mm--
+    if (mm < 1) {
+      mm = 12
+      y--
+    }
+  }
+  return out
+}
+app.get('/kpi', async (c) => {
+  const month = /^\d{4}-\d{2}$/.test(c.req.query('month') ?? '') ? c.req.query('month')! : new Date().toISOString().slice(0, 7)
+  const settings = await getSettings(c.env.DB)
+  const config = parseKpiConfig(settings.kpi_config)
+  const months = prevMonths(month, 6)
+  const records = Object.fromEntries(months.map((m) => [m, parseKpiMonth(settings[kpiMonthKey(m)])]))
+  const { out, proj, team } = await kpiContexts(c.env.DB, months, records)
+  const trend = months.map((m) => ({
+    month: m,
+    finalized: !!records[m].final,
+    scores: Object.fromEntries(computeKpi(config, records[m], out[m]).map((r) => [r.staff.id, r.score])),
+  }))
+  return c.json({
+    month,
+    config,
+    record: records[month],
+    ctx: out[month],
+    storeTargetDefault: proj?.volume?.[month] ?? null,
+    members: team.members.map((x) => x.name),
+    trend,
+  })
+})
+app.put('/kpi/config', async (c) => {
+  const body = await c.req.json<{ config: KpiConfig }>()
+  if (!body?.config || !Array.isArray(body.config.staff)) return c.json({ error: 'Format KPI tidak dikenali' }, 400)
+  await c.env.DB.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value')
+    .bind('kpi_config', JSON.stringify(body.config))
+    .run()
+  return c.json({ ok: true })
+})
+app.put('/kpi/month/:m', async (c) => {
+  const m = c.req.param('m')
+  if (!/^\d{4}-\d{2}$/.test(m)) return c.json({ error: 'Bulan tidak valid' }, 400)
+  const body = await c.req.json<{ record: KpiMonthRecord }>()
+  const prev = parseKpiMonth((await getSettings(c.env.DB))[kpiMonthKey(m)])
+  if (prev.final) return c.json({ error: 'KPI bulan ini sudah difinalisasi. Buka kembali dulu untuk mengubah.' }, 409)
+  const rec: KpiMonthRecord = { storeTarget: body.record?.storeTarget ?? null, staff: body.record?.staff ?? {}, final: null, finalizedAt: null }
+  await c.env.DB.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').bind(kpiMonthKey(m), JSON.stringify(rec)).run()
+  return c.json({ ok: true })
+})
+app.post('/kpi/month/:m/finalize', async (c) => {
+  const m = c.req.param('m')
+  if (!/^\d{4}-\d{2}$/.test(m)) return c.json({ error: 'Bulan tidak valid' }, 400)
+  const body = await c.req.json<{ final: boolean }>()
+  const settings = await getSettings(c.env.DB)
+  const rec = parseKpiMonth(settings[kpiMonthKey(m)])
+  if (body.final) {
+    const { out } = await kpiContexts(c.env.DB, [m], { [m]: rec })
+    const results = computeKpi(parseKpiConfig(settings.kpi_config), rec, out[m])
+    rec.final = Object.fromEntries(results.map((r) => [r.staff.commissionMember, Math.round(r.factor * 10000) / 10000]))
+    rec.finalizedAt = new Date().toISOString()
+  } else {
+    rec.final = null
+    rec.finalizedAt = null
+  }
+  await c.env.DB.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').bind(kpiMonthKey(m), JSON.stringify(rec)).run()
+  return c.json({ ok: true, final: rec.final })
 })
 
 // ---------- Rencana restock ----------

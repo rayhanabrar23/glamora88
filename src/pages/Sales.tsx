@@ -1,5 +1,4 @@
 import { useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
 import { parseCsv, parseTikTokRows, type ParseResult } from '../../shared/tiktok'
 import { SALE_STATUSES, type Sale } from '../../shared/types'
 import { readXlsx, readXlsxSheetNames } from '../lib/xlsx'
@@ -7,6 +6,7 @@ import { api, qs } from '../lib/api'
 import { dateLabel, int, rp, today } from '../lib/format'
 import { useRefs } from '../lib/refs'
 import { useData } from '../lib/useData'
+import { SkuMapping } from './Settings'
 import {
   Badge,
   Button,
@@ -41,7 +41,7 @@ const statusTone: Record<string, 'neutral' | 'bad' | 'warn' | 'info' | 'good'> =
 }
 
 export default function Sales() {
-  const [tab, setTab] = useState<'data' | 'upload'>('data')
+  const [tab, setTab] = useState<'data' | 'upload' | 'map'>('data')
   const [editing, setEditing] = useState<Partial<Sale> | null>(null)
   const refs = useRefs()
   return (
@@ -56,6 +56,7 @@ export default function Sales() {
               items={[
                 { value: 'data', label: 'Data penjualan' },
                 { value: 'upload', label: 'Unggah export TikTok' },
+                { value: 'map', label: 'Pemetaan SKU' },
               ]}
             />
             <Button variant="primary" icon="plus" onClick={() => setEditing({ order_date: `${today()} 12:00:00`, qty: 1, status: 'Normal', store: refs.stores[0] })}>
@@ -64,7 +65,9 @@ export default function Sales() {
           </>
         }
       />
-      {tab === 'data' ? <SalesList onEdit={setEditing} refs={refs} /> : <Upload stores={refs.stores} onDone={() => setTab('data')} />}
+      {tab === 'data' && <SalesList onEdit={setEditing} refs={refs} />}
+      {tab === 'upload' && <Upload stores={refs.stores} onDone={() => setTab('data')} />}
+      {tab === 'map' && <SkuMapping skuOptions={refs.skuOptions} />}
       {editing && <SaleForm initial={editing} refs={refs} onClose={() => setEditing(null)} />}
     </>
   )
@@ -323,10 +326,7 @@ function Upload({ stores, onDone }: { stores: string[]; onDone: () => void }) {
                 {result.unmapped > 0 && (
                   <>
                     Ada <b>{result.unmapped}</b> baris yang SKU-nya belum dikenali.{' '}
-                    <Link to="/pengaturan" className="font-medium text-navy underline">
-                      Petakan di Pengaturan
-                    </Link>
-                    .
+                    Petakan di tab <b>Pemetaan SKU</b> di atas.
                   </>
                 )}{' '}
                 <button className="font-medium text-navy underline" onClick={onDone}>

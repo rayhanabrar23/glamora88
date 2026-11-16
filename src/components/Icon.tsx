@@ -30,7 +30,8 @@ const P: Record<string, string> = {
   bell: 'M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 0 1-3.46 0',
   arrow: 'M5 12h14M13 6l6 6-6 6',
   calendar: 'M3 5h18v16H3zM3 10h18M8 3v4M16 3v4',
-  coins: 'M9 14a6 6 0 1 0 0-12 6 6 0 0 0 0 12zM15.5 9.2a6 6 0 1 1-6.3 6.3M7 6h2v4',
+  kpi: 'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zM12 18a6 6 0 1 0 0-12 6 6 0 0 0 0 12zM12 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4z',
+  coins:'M9 14a6 6 0 1 0 0-12 6 6 0 0 0 0 12zM15.5 9.2a6 6 0 1 1-6.3 6.3M7 6h2v4',
 }
 
 export function Icon({ name, size = 18, className = '' }: { name: keyof typeof P | string; size?: number; className?: string }) {

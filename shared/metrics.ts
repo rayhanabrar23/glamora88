@@ -345,6 +345,22 @@ export function computeMonthly(b: DataBundle, from?: string, to?: string): Month
   for (const r of rows.values()) {
     if (autoTeam) {
       const c = commissionFor(team, r.month, r.omzetNet - r.platformFees)
+      // faktor KPI yang sudah difinalisasi owner untuk bulan ini
+      const kpiRaw = s[`kpi_month_${r.month}`]
+      if (kpiRaw) {
+        try {
+          const final = (JSON.parse(kpiRaw) as { final?: Record<string, number> | null }).final
+          if (final) {
+            c.total = 0
+            for (const k of Object.keys(c.by)) {
+              if (final[k] != null) c.by[k] = Math.round(c.by[k] * Number(final[k]))
+              c.total += c.by[k]
+            }
+          }
+        } catch {
+          /* catatan KPI yang rusak diabaikan */
+        }
+      }
       r.teamCommission = c.total
       r.teamCommissionBy = c.by
       r.variableExpenses += c.total

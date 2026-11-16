@@ -3,6 +3,7 @@ import { DEFAULT_SETTINGS, SCHEMA } from './schema'
 export interface Env {
   DB: D1Database
   APP_PASSWORD?: string
+  OWNER_PASSWORD?: string
   SESSION_SECRET?: string
 }
 

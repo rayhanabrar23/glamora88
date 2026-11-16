@@ -16,6 +16,7 @@ const NAV = [
   { to: '/biaya', label: 'Biaya Operasional', icon: 'expense' },
   { to: '/proyeksi', label: 'Proyeksi Kas', icon: 'up' },
   { to: '/laporan', label: 'Unduh Laporan', icon: 'download' },
+  { to: '/kpi', label: 'KPI Staf', icon: 'kpi' },
   { to: '/pengaturan', label: 'Pengaturan', icon: 'settings' },
 ]
 

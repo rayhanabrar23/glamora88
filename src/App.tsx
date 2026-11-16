@@ -15,6 +15,7 @@ import Settlement from './pages/Settlement'
 import Reports from './pages/Reports'
 import Expenses from './pages/Expenses'
 import Settings from './pages/Settings'
+import Kpi from './pages/Kpi'
 
 export default function App() {
   const [auth, setAuth] = useState<'checking' | 'in' | 'out'>('checking')
@@ -53,6 +54,7 @@ export default function App() {
               <Route path="/biaya" element={<Expenses />} />
               <Route path="/proyeksi" element={<Projection />} />
               <Route path="/laporan" element={<Reports />} />
+              <Route path="/kpi" element={<Kpi />} />
               <Route path="/pengaturan" element={<Settings />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
