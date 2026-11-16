@@ -31,7 +31,13 @@ const P: Record<string, string> = {
   arrow: 'M5 12h14M13 6l6 6-6 6',
   calendar: 'M3 5h18v16H3zM3 10h18M8 3v4M16 3v4',
   kpi: 'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zM12 18a6 6 0 1 0 0-12 6 6 0 0 0 0 12zM12 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4z',
-  coins:'M9 14a6 6 0 1 0 0-12 6 6 0 0 0 0 12zM15.5 9.2a6 6 0 1 1-6.3 6.3M7 6h2v4',
+  users: 'M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75',
+  left: 'M15 18l-6-6 6-6',
+  right: 'M9 18l6-6-6-6',
+  history:'M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5M12 7v5l3 3',
+  clock: 'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zM12 6v6l4 2',
+  repeat: 'M17 1l4 4-4 4M3 11V9a4 4 0 0 1 4-4h14M7 23l-4-4 4-4M21 13v2a4 4 0 0 1-4 4H3',
+  coins: 'M9 14a6 6 0 1 0 0-12 6 6 0 0 0 0 12zM15.5 9.2a6 6 0 1 1-6.3 6.3M7 6h2v4',
 }
 
 export function Icon({ name, size = 18, className = '' }: { name: keyof typeof P | string; size?: number; className?: string }) {

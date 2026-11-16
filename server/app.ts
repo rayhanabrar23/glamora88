@@ -1,6 +1,7 @@
 import { computeRestock, DEFAULT_RESTOCK, type RestockParams } from '../shared/restock'
 import { Hono } from 'hono'
-import { checkOwnerPassword, checkPassword, clearOwnerCookie, clearSessionCookie, isAuthenticated, isOwner, makeOwnerCookie, makeSessionCookie } from './auth'
+import { checkOwnerPassword, checkPassword, clearOwnerCookie, clearSessionCookie, hashPassword, isOwner, makeOwnerCookie, makeSessionCookie, sessionUid, verifyPassword } from './auth'
+import type { AgendaItem } from '../shared/agenda'
 import { computeKpi, kpiMonthKey, parseKpiConfig, parseKpiMonth, type KpiConfig, type KpiContext, type KpiMonthRecord } from '../shared/kpi'
 import { ensureSchema, getSettings, num, runBatched, type Env } from './db'
 import { DEFAULT_SETTINGS } from './schema'
@@ -10,19 +11,42 @@ import { commissionFor, parseTeamCommission, teamPct } from '../shared/commissio
 import { buildLiveReport, lateMinutes, type LiveSession } from '../shared/live'
 import type { ImportedSaleLine } from '../shared/types'
 
-const app = new Hono<{ Bindings: Env }>().basePath('/api')
+type SessionUser = { id: number; name: string; role: string }
+const app = new Hono<{ Bindings: Env; Variables: { user: SessionUser } }>().basePath('/api')
 
 app.onError((err, c) => {
   console.error(err)
   return c.json({ error: err.message || 'Terjadi kesalahan di server' }, 500)
 })
 
-// ---------- Autentikasi ----------
+// ---------- Autentikasi: akun per orang (tabel users) ----------
+const PUBLIC = new Set(['/api/login', '/api/logout', '/api/login-info'])
+const accountsEnabled = async (db: D1Database) => ((await db.prepare('SELECT COUNT(*) AS n FROM users WHERE active = 1').first<{ n: number }>())?.n ?? 0) > 0
+
+app.use('*', async (c, next) => {
+  if (!c.env.DB) return c.json({ error: 'Database D1 belum terhubung (binding "DB"). Lihat README.' }, 503)
+  await ensureSchema(c.env.DB)
+  return next()
+})
+app.get('/login-info', async (c) => c.json({ accounts: await accountsEnabled(c.env.DB) }))
 app.post('/login', async (c) => {
-  if (!c.env.APP_PASSWORD) return c.json({ error: 'APP_PASSWORD belum diatur di Cloudflare (lihat README).' }, 503)
-  const body = await c.req.json<{ password?: string }>().catch(() => ({ password: '' }))
-  if (!checkPassword(body.password ?? '', c.env)) return c.json({ error: 'Kata sandi salah' }, 401)
-  c.header('Set-Cookie', await makeSessionCookie(c.env))
+  const body = await c.req.json<{ username?: string; password?: string }>().catch(() => ({}) as { username?: string; password?: string })
+  const username = (body.username ?? '').trim().toLowerCase()
+  const password = body.password ?? ''
+  let uid: number | null = null
+  if (username === 'owner') {
+    if (checkOwnerPassword(password, c.env)) uid = -1
+  } else if (username) {
+    const u = await c.env.DB.prepare('SELECT id, pass_hash, pass_salt FROM users WHERE lower(username) = ? AND active = 1').bind(username).first<{ id: number; pass_hash: string; pass_salt: string }>()
+    if (u && (await verifyPassword(password, u.pass_hash, u.pass_salt))) uid = u.id
+  } else if (!(await accountsEnabled(c.env.DB))) {
+    if (!c.env.APP_PASSWORD) return c.json({ error: 'APP_PASSWORD belum diatur di Cloudflare (lihat README).' }, 503)
+    if (checkPassword(password, c.env)) uid = 0
+  } else {
+    return c.json({ error: 'Masukkan nama pengguna. Kata sandi tim bersama sudah tidak dipakai.' }, 401)
+  }
+  if (uid == null) return c.json({ error: 'Nama pengguna atau kata sandi salah' }, 401)
+  c.header('Set-Cookie', await makeSessionCookie(c.env, uid))
   return c.json({ ok: true })
 })
 
@@ -32,23 +56,136 @@ app.post('/logout', (c) => {
 })
 
 app.use('*', async (c, next) => {
-  if (c.req.path === '/api/login' || c.req.path === '/api/logout') return next()
-  if (!(await isAuthenticated(c.req.header('Cookie'), c.env))) return c.json({ error: 'Silakan masuk terlebih dahulu' }, 401)
-  if (!c.env.DB) return c.json({ error: 'Database D1 belum terhubung (binding "DB"). Lihat README.' }, 503)
-  await ensureSchema(c.env.DB)
+  if (PUBLIC.has(c.req.path)) return next()
+  const uid = await sessionUid(c.req.header('Cookie'), c.env)
+  if (uid == null) return c.json({ error: 'Silakan masuk terlebih dahulu' }, 401)
+  let user: SessionUser
+  if (uid === -1) user = { id: -1, name: 'Owner', role: 'Owner' }
+  else if (uid === 0) {
+    // sesi kata sandi bersama berhenti berlaku begitu akun per orang dipakai
+    if (await accountsEnabled(c.env.DB)) return c.json({ error: 'Silakan masuk dengan akun masing-masing' }, 401)
+    user = { id: 0, name: 'Tim (bersama)', role: 'Staf' }
+  } else {
+    const u = await c.env.DB.prepare('SELECT id, name, role FROM users WHERE id = ? AND active = 1').bind(uid).first<SessionUser>()
+    if (!u) return c.json({ error: 'Akun tidak aktif. Silakan masuk lagi.' }, 401)
+    user = u
+  }
+  c.set('user', user)
   return next()
+})
+
+// ---------- Riwayat perubahan: setiap simpan/ubah/hapus dicatat ----------
+const AREAS: [RegExp, string][] = [
+  [/^\/api\/sales\/import/, 'Unggah penjualan'],
+  [/^\/api\/sales/, 'Penjualan'],
+  [/^\/api\/settlements/, 'Pencairan TikTok'],
+  [/^\/api\/purchases/, 'Pembelian & impor'],
+  [/^\/api\/(products|variants)/, 'Produk & varian'],
+  [/^\/api\/stock/, 'Stok opname'],
+  [/^\/api\/sku-map/, 'Pemetaan SKU'],
+  [/^\/api\/boosts/, 'Boost'],
+  [/^\/api\/expenses/, 'Biaya operasional'],
+  [/^\/api\/live/, 'Sesi live'],
+  [/^\/api\/settings/, 'Pengaturan'],
+  [/^\/api\/stores/, 'Toko'],
+  [/^\/api\/kpi/, 'KPI'],
+  [/^\/api\/data\/import/, 'Impor data'],
+  [/^\/api\/data\/reset/, 'Reset data'],
+  [/^\/api\/users/, 'Akun tim'],
+  [/^\/api\/me\/password/, 'Ganti kata sandi'],
+  [/^\/api\/agenda/, 'Agenda'],
+]
+const SKIP_AUDIT = new Set(['/api/login', '/api/logout', '/api/owner/login', '/api/owner/logout'])
+function summarize(path: string, body: unknown): string | null {
+  if (/^\/api\/(users|me\/password|owner)/.test(path)) {
+    const b = body as Record<string, unknown> | null
+    return b && typeof b === 'object' ? [b.name, b.username].filter(Boolean).join(' · ') || null : null
+  }
+  if (Array.isArray(body)) return `${body.length} baris`
+  if (!body || typeof body !== 'object') return null
+  const b = body as Record<string, unknown>
+  for (const k of ['rows', 'lines', 'items', 'records']) if (Array.isArray(b[k])) return `${(b[k] as unknown[]).length} baris`
+  const pick = ['title', 'name', 'sku', 'code', 'category', 'description', 'order_id', 'start_at', 'exp_date', 'boost_date', 'amount', 'store', 'host']
+    .filter((k) => b[k] != null && b[k] !== '')
+    .slice(0, 4)
+    .map((k) => String(b[k]).slice(0, 60))
+  if (pick.length) return pick.join(' · ')
+  const keys = Object.keys(b).filter((k) => !/pass/i.test(k))
+  return keys.length ? keys.slice(0, 5).join(', ') : null
+}
+const TARGETS: [RegExp, string][] = [
+  [/^\/api\/agenda\/(\d+)/, "SELECT title AS l FROM agenda WHERE id = ?"],
+  [/^\/api\/users\/(\d+)/, "SELECT name AS l FROM users WHERE id = ?"],
+  [/^\/api\/expenses\/(\d+)/, "SELECT category || ' · ' || exp_date || ' · Rp' || CAST(amount AS INTEGER) AS l FROM expenses WHERE id = ?"],
+  [/^\/api\/boosts\/(\d+)/, "SELECT 'Boost ' || boost_date || ' · ' || store AS l FROM boosts WHERE id = ?"],
+  [/^\/api\/live\/(\d+)/, "SELECT 'Sesi ' || start_at || COALESCE(' · ' || host, '') AS l FROM live_sessions WHERE id = ?"],
+  [/^\/api\/sales\/(\d+)/, "SELECT 'Pesanan ' || order_id AS l FROM sales WHERE id = ?"],
+  [/^\/api\/purchases\/(\d+)/, "SELECT name AS l FROM purchases WHERE id = ?"],
+  [/^\/api\/stock\/adjustments\/(\d+)/, "SELECT sku || ' ' || qty_delta AS l FROM stock_adjustments WHERE id = ?"],
+  [/^\/api\/stores\/(\d+)/, "SELECT name AS l FROM stores WHERE id = ?"],
+  [/^\/api\/products\/([^/]+)/, "SELECT code || ' ' || name AS l FROM products WHERE code = ?"],
+  [/^\/api\/variants\/([^/]+)/, "SELECT sku AS l FROM variants WHERE sku = ?"],
+]
+async function targetLabel(db: D1Database, path: string) {
+  for (const [re, sql] of TARGETS) {
+    const m = path.match(re)
+    if (m) return (await db.prepare(sql).bind(decodeURIComponent(m[1])).first<{ l: string }>())?.l ?? `#${m[1]}`
+  }
+  return null
+}
+function auditSummary(path: string, method: string, body: unknown, target: string | null) {
+  if (/\/agenda\/\d+\/done$/.test(path)) {
+    const b = body as { date?: string; done?: boolean } | null
+    return `${target ?? ''} · ${b?.date ?? ''} · ${b?.done ? 'ditandai selesai' : 'dibatalkan selesai'}`
+  }
+  if (/^\/api\/users\/\d+/.test(path)) {
+    const b = (body ?? {}) as { active?: boolean; password?: string }
+    const what = [b.active === false ? 'dinonaktifkan' : b.active === true ? 'diaktifkan' : null, b.password ? 'kata sandi diganti' : null].filter(Boolean).join(', ')
+    return [target, what].filter(Boolean).join(' · ') || null
+  }
+  if (method === 'DELETE') return target
+  const s = summarize(path, body)
+  return target && s ? `${target} → ${s}` : (target ?? s)
+}
+app.use('*', async (c, next) => {
+  const method = c.req.method
+  if (method === 'GET' || SKIP_AUDIT.has(c.req.path) || PUBLIC.has(c.req.path)) return next()
+  let body: unknown = null
+  if ((c.req.header('Content-Type') ?? '').includes('application/json')) body = await c.req.json().catch(() => null)
+  // nama data yang diubah/dihapus diambil sebelum perubahan, supaya riwayat tetap jelas
+  const target = await targetLabel(c.env.DB, c.req.path).catch(() => null)
+  await next()
+  if (c.res.status >= 400) return
+  const path = c.req.path
+  const area = AREAS.find(([re]) => re.test(path))?.[1] ?? path.replace('/api/', '')
+  const action = path.endsWith('/finalize') ? 'finalisasi' : method === 'POST' ? 'tambah' : method === 'PUT' ? 'ubah' : method === 'DELETE' ? 'hapus' : method.toLowerCase()
+  const u = c.get('user')
+  try {
+    await c.env.DB.prepare('INSERT INTO audit_log (user_name, action, area, summary, method, path) VALUES (?,?,?,?,?,?)')
+      .bind(u?.name ?? '?', action, area, auditSummary(path, method, body, target), method, path)
+      .run()
+  } catch (e) {
+    console.error('audit gagal', e)
+  }
 })
 
 // ---------- Kunci owner (KPI, pengaturan, data) ----------
 const ownerOnly = (path: string, method: string) =>
-  path.startsWith('/api/kpi') || path.startsWith('/api/data/') || (path.startsWith('/api/stores') && method !== 'GET')
+  path.startsWith('/api/kpi') ||
+  path.startsWith('/api/data/') ||
+  path.startsWith('/api/users') ||
+  path.startsWith('/api/audit') ||
+  (path.startsWith('/api/stores') && method !== 'GET')
+// owner dianggap sudah membuka kunci bila masuk dengan akun "owner" atau sudah memasukkan kata sandi owner
+const ownerOk = async (c: { req: { header: (k: string) => string | undefined }; env: Env; get: (k: 'user') => SessionUser }) =>
+  c.get('user')?.id === -1 || (await isOwner(c.req.header('Cookie'), c.env))
 app.use('*', async (c, next) => {
-  if (ownerOnly(c.req.path, c.req.method) && !(await isOwner(c.req.header('Cookie'), c.env))) {
+  if (ownerOnly(c.req.path, c.req.method) && !(await ownerOk(c))) {
     return c.json({ error: c.env.OWNER_PASSWORD ? 'Bagian ini hanya untuk owner. Buka kunci dengan kata sandi owner.' : 'OWNER_PASSWORD belum diatur di Cloudflare.' }, 403)
   }
   return next()
 })
-app.get('/owner', async (c) => c.json({ owner: await isOwner(c.req.header('Cookie'), c.env), configured: !!c.env.OWNER_PASSWORD }))
+app.get('/owner', async (c) => c.json({ owner: await ownerOk(c), configured: !!c.env.OWNER_PASSWORD, viaLogin: c.get('user')?.id === -1 }))
 app.post('/owner/login', async (c) => {
   if (!c.env.OWNER_PASSWORD) return c.json({ error: 'OWNER_PASSWORD belum diatur di Cloudflare.' }, 503)
   const body = await c.req.json<{ password?: string }>().catch(() => ({ password: '' }))
@@ -61,7 +198,137 @@ app.post('/owner/logout', (c) => {
   return c.json({ ok: true })
 })
 
-app.get('/me', (c) => c.json({ ok: true }))
+app.get('/me', async (c) => c.json({ ok: true, user: c.get('user'), accounts: await accountsEnabled(c.env.DB) }))
+app.put('/me/password', async (c) => {
+  const u = c.get('user')
+  if (u.id <= 0) return c.json({ error: 'Kata sandi ini diatur di Cloudflare, bukan dari portal.' }, 400)
+  const b = await c.req.json<{ old?: string; password?: string }>()
+  const row = await c.env.DB.prepare('SELECT pass_hash, pass_salt FROM users WHERE id = ?').bind(u.id).first<{ pass_hash: string; pass_salt: string }>()
+  if (!row || !(await verifyPassword(b.old ?? '', row.pass_hash, row.pass_salt))) return c.json({ error: 'Kata sandi lama salah' }, 400)
+  if ((b.password ?? '').length < 6) return c.json({ error: 'Kata sandi baru minimal 6 karakter' }, 400)
+  const h = await hashPassword(b.password!)
+  await c.env.DB.prepare('UPDATE users SET pass_hash = ?, pass_salt = ? WHERE id = ?').bind(h.hash, h.salt, u.id).run()
+  return c.json({ ok: true })
+})
+
+// ---------- Akun tim (khusus owner) ----------
+app.get('/users', async (c) => c.json((await c.env.DB.prepare('SELECT id, name, username, role, active, created_at FROM users ORDER BY active DESC, name').all()).results))
+app.post('/users', async (c) => {
+  const b = await c.req.json<{ name?: string; username?: string; password?: string; role?: string }>()
+  const username = (b.username ?? '').trim().toLowerCase()
+  if (!b.name?.trim() || !/^[a-z0-9._-]{3,30}$/.test(username)) return c.json({ error: 'Isi nama dan nama pengguna (3–30 huruf kecil/angka, tanpa spasi)' }, 400)
+  if (username === 'owner') return c.json({ error: 'Nama pengguna "owner" khusus untuk owner' }, 400)
+  if ((b.password ?? '').length < 6) return c.json({ error: 'Kata sandi minimal 6 karakter' }, 400)
+  if (await c.env.DB.prepare('SELECT 1 FROM users WHERE lower(username) = ?').bind(username).first()) return c.json({ error: 'Nama pengguna sudah dipakai' }, 400)
+  const h = await hashPassword(b.password!)
+  await c.env.DB.prepare('INSERT INTO users (name, username, pass_hash, pass_salt, role) VALUES (?,?,?,?,?)').bind(b.name.trim(), username, h.hash, h.salt, b.role?.trim() || 'Staf').run()
+  return c.json({ ok: true })
+})
+app.put('/users/:id', async (c) => {
+  const b = await c.req.json<{ name?: string; role?: string; active?: boolean; password?: string }>()
+  const id = Number(c.req.param('id'))
+  const cur = await c.env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(id).first<{ name: string; role: string; active: number }>()
+  if (!cur) return c.json({ error: 'Akun tidak ditemukan' }, 404)
+  if (b.password) {
+    if (b.password.length < 6) return c.json({ error: 'Kata sandi minimal 6 karakter' }, 400)
+    const h = await hashPassword(b.password)
+    await c.env.DB.prepare('UPDATE users SET pass_hash = ?, pass_salt = ? WHERE id = ?').bind(h.hash, h.salt, id).run()
+  }
+  await c.env.DB.prepare('UPDATE users SET name = ?, role = ?, active = ? WHERE id = ?')
+    .bind(b.name?.trim() || cur.name, b.role?.trim() || cur.role, b.active == null ? cur.active : b.active ? 1 : 0, id)
+    .run()
+  return c.json({ ok: true })
+})
+app.get('/audit', async (c) => {
+  const user = c.req.query('user')
+  const area = c.req.query('area')
+  const limit = Math.min(500, Math.max(20, Number(c.req.query('limit')) || 200))
+  const where: string[] = []
+  const params: string[] = []
+  if (user) {
+    where.push('user_name = ?')
+    params.push(user)
+  }
+  if (area) {
+    where.push('area = ?')
+    params.push(area)
+  }
+  const rows = await c.env.DB.prepare(`SELECT * FROM audit_log ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY id DESC LIMIT ${limit}`)
+    .bind(...params)
+    .all()
+  const users = await c.env.DB.prepare('SELECT DISTINCT user_name FROM audit_log ORDER BY user_name').all<{ user_name: string }>()
+  const areas = await c.env.DB.prepare('SELECT DISTINCT area FROM audit_log ORDER BY area').all<{ area: string }>()
+  return c.json({ rows: rows.results, users: users.results.map((x) => x.user_name), areas: areas.results.map((x) => x.area) })
+})
+
+// ---------- Agenda tim ----------
+const AGENDA_KINDS = new Set(['kegiatan', 'pengingat'])
+const AGENDA_REPEATS = new Set(['none', 'daily', 'weekly', 'monthly'])
+const isDate = (v: unknown) => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v)
+app.get('/agenda', async (c) => {
+  const rows = await c.env.DB.prepare('SELECT * FROM agenda ORDER BY start_date, start_time').all<AgendaItem>()
+  const settings = await getSettings(c.env.DB)
+  const users = await c.env.DB.prepare('SELECT name FROM users WHERE active = 1 ORDER BY name').all<{ name: string }>()
+  const people = [...new Set([...users.results.map((u) => u.name), ...parseTeamCommission(settings.team_commission).members.map((m) => m.name)])]
+  return c.json({ items: rows.results, people })
+})
+function agendaVals(b: Record<string, unknown>, by: string) {
+  if (!String(b.title ?? '').trim()) throw new Error('Judul wajib diisi')
+  if (!isDate(b.start_date)) throw new Error('Tanggal tidak valid')
+  return [
+    String(b.title).trim().slice(0, 200),
+    str(b.notes),
+    AGENDA_KINDS.has(String(b.kind)) ? String(b.kind) : 'kegiatan',
+    str(b.category),
+    b.start_date,
+    /^\d{2}:\d{2}$/.test(String(b.start_time ?? '')) ? String(b.start_time) : null,
+    isDate(b.end_date) && String(b.end_date) >= String(b.start_date) ? b.end_date : null,
+    str(b.assignee),
+    AGENDA_REPEATS.has(String(b.repeat)) ? String(b.repeat) : 'none',
+    isDate(b.repeat_until) ? b.repeat_until : null,
+    by,
+  ]
+}
+app.post('/agenda', async (c) => {
+  try {
+    await c.env.DB.prepare('INSERT INTO agenda (title, notes, kind, category, start_date, start_time, end_date, assignee, repeat, repeat_until, created_by) VALUES (?,?,?,?,?,?,?,?,?,?,?)')
+      .bind(...agendaVals(await c.req.json(), c.get('user').name))
+      .run()
+  } catch (e) {
+    return c.json({ error: (e as Error).message }, 400)
+  }
+  return c.json({ ok: true })
+})
+app.put('/agenda/:id', async (c) => {
+  try {
+    const v = agendaVals(await c.req.json(), '')
+    await c.env.DB.prepare('UPDATE agenda SET title=?, notes=?, kind=?, category=?, start_date=?, start_time=?, end_date=?, assignee=?, repeat=?, repeat_until=? WHERE id=?')
+      .bind(...v.slice(0, 10), c.req.param('id'))
+      .run()
+  } catch (e) {
+    return c.json({ error: (e as Error).message }, 400)
+  }
+  return c.json({ ok: true })
+})
+app.post('/agenda/:id/done', async (c) => {
+  const b = await c.req.json<{ date: string; done: boolean }>()
+  if (!isDate(b.date)) return c.json({ error: 'Tanggal tidak valid' }, 400)
+  const row = await c.env.DB.prepare('SELECT done FROM agenda WHERE id = ?').bind(c.req.param('id')).first<{ done: string | null }>()
+  if (!row) return c.json({ error: 'Agenda tidak ditemukan' }, 404)
+  let list: string[] = []
+  try {
+    list = JSON.parse(row.done ?? '[]')
+  } catch {
+    list = []
+  }
+  list = b.done ? [...new Set([...list, b.date])] : list.filter((d) => d !== b.date)
+  await c.env.DB.prepare('UPDATE agenda SET done = ? WHERE id = ?').bind(JSON.stringify(list.sort()), c.req.param('id')).run()
+  return c.json({ ok: true })
+})
+app.delete('/agenda/:id', async (c) => {
+  await c.env.DB.prepare('DELETE FROM agenda WHERE id = ?').bind(c.req.param('id')).run()
+  return c.json({ ok: true })
+})
 
 // ---------- Helper ----------
 async function loadBundle(db: D1Database): Promise<DataBundle> {
@@ -148,7 +415,7 @@ app.get('/settings', async (c) => {
 const STAFF_SETTING_KEYS = new Set(['projection', 'restock'])
 app.put('/settings', async (c) => {
   const body = await c.req.json<Record<string, string>>()
-  if (Object.keys(body).some((k) => !STAFF_SETTING_KEYS.has(k)) && !(await isOwner(c.req.header('Cookie'), c.env))) {
+  if (Object.keys(body).some((k) => !STAFF_SETTING_KEYS.has(k)) && !(await ownerOk(c))) {
     return c.json({ error: 'Pengaturan hanya bisa diubah owner. Buka kunci dengan kata sandi owner.' }, 403)
   }
   if (Object.keys(body).some((k) => k.startsWith('kpi_'))) return c.json({ error: 'Gunakan menu KPI' }, 400)
@@ -828,7 +1095,7 @@ app.delete('/live/:id', async (c) => {
 })
 
 // ---------- Cadangan & impor data lengkap ----------
-const TABLES = ['settings', 'stores', 'products', 'variants', 'sku_map', 'sales', 'purchases', 'purchase_items', 'stock_adjustments', 'boosts', 'expenses', 'live_sessions', 'settlements'] as const
+const TABLES = ['settings', 'stores', 'products', 'variants', 'sku_map', 'sales', 'purchases', 'purchase_items', 'stock_adjustments', 'boosts', 'expenses', 'live_sessions', 'settlements', 'agenda'] as const
 
 app.get('/data/export', async (c) => {
   const out: Record<string, unknown[]> = {}
@@ -838,7 +1105,7 @@ app.get('/data/export', async (c) => {
 })
 
 // Reset data: hapus isi tabel. keepSetup = pertahankan pengaturan, toko, produk, varian & pemetaan SKU.
-const SETUP_TABLES = ['settings', 'stores', 'products', 'variants', 'sku_map']
+const SETUP_TABLES = ['settings', 'stores', 'products', 'variants', 'sku_map', 'agenda']
 app.post('/data/reset', async (c) => {
   const body = await c.req.json<{ confirm?: string; keepSetup?: boolean }>().catch(() => ({}) as { confirm?: string; keepSetup?: boolean })
   if (body.confirm !== 'RESET') return c.json({ error: 'Konfirmasi tidak cocok' }, 400)

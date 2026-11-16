@@ -26,27 +26,54 @@ function secretOf(env: { APP_PASSWORD?: string; SESSION_SECRET?: string }) {
   return env.SESSION_SECRET || `g88:${env.APP_PASSWORD ?? ''}`
 }
 
-export async function makeSessionCookie(env: { APP_PASSWORD?: string; SESSION_SECRET?: string }) {
+/**
+ * Sesi menyimpan id pengguna: 0 = kata sandi tim bersama, -1 = owner (masuk dengan OWNER_PASSWORD),
+ * angka positif = akun di tabel users.
+ */
+export async function makeSessionCookie(env: { APP_PASSWORD?: string; SESSION_SECRET?: string }, uid = 0) {
   const exp = Math.floor(Date.now() / 1000) + MAX_AGE
-  const sig = await hmac(secretOf(env), String(exp))
-  return `${COOKIE}=${exp}.${sig}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${MAX_AGE}`
+  const sig = await hmac(secretOf(env), `${exp}.${uid}`)
+  return `${COOKIE}=${exp}.${uid}.${sig}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${MAX_AGE}`
 }
 
 export function clearSessionCookie() {
   return `${COOKIE}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`
 }
 
-export async function isAuthenticated(
-  cookieHeader: string | null | undefined,
-  env: { APP_PASSWORD?: string; SESSION_SECRET?: string },
-): Promise<boolean> {
-  if (!cookieHeader) return false
+/** Mengembalikan id pengguna dari cookie sesi, atau null bila tidak sah. */
+export async function sessionUid(cookieHeader: string | null | undefined, env: { APP_PASSWORD?: string; SESSION_SECRET?: string }): Promise<number | null> {
+  if (!cookieHeader) return null
   const m = cookieHeader.match(new RegExp(`(?:^|;\\s*)${COOKIE}=([^;]+)`))
-  if (!m) return false
-  const [exp, sig] = m[1].split('.')
-  if (!exp || !sig || Number(exp) < Date.now() / 1000) return false
-  const expected = await hmac(secretOf(env), exp)
-  return timingSafeEqual(sig, expected)
+  if (!m) return null
+  const parts = m[1].split('.')
+  const exp = parts[0]
+  if (!exp || Number(exp) < Date.now() / 1000) return null
+  if (parts.length === 2) {
+    // format lama (sebelum ada akun): dianggap sesi tim bersama
+    return timingSafeEqual(parts[1], await hmac(secretOf(env), exp)) ? 0 : null
+  }
+  const [, uid, sig] = parts
+  if (!/^-?\d+$/.test(uid ?? '') || !sig) return null
+  return timingSafeEqual(sig, await hmac(secretOf(env), `${exp}.${uid}`)) ? Number(uid) : null
+}
+
+export async function isAuthenticated(cookieHeader: string | null | undefined, env: { APP_PASSWORD?: string; SESSION_SECRET?: string }): Promise<boolean> {
+  return (await sessionUid(cookieHeader, env)) != null
+}
+
+// ---------- Kata sandi akun: PBKDF2-SHA256 ----------
+const b64 = (u: Uint8Array) => btoa(String.fromCharCode(...u))
+const unb64 = (s: string) => Uint8Array.from(atob(s), (ch) => ch.charCodeAt(0))
+const ITER = 100000
+export async function hashPassword(password: string, saltB64?: string) {
+  const salt = saltB64 ? unb64(saltB64) : crypto.getRandomValues(new Uint8Array(16))
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveBits'])
+  const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt, iterations: ITER }, key, 256)
+  return { hash: b64(new Uint8Array(bits)), salt: b64(salt) }
+}
+export async function verifyPassword(password: string, hash: string, salt: string) {
+  const h = await hashPassword(password, salt)
+  return timingSafeEqual(h.hash, hash)
 }
 
 export function checkPassword(input: string, env: { APP_PASSWORD?: string }) {

@@ -118,6 +118,43 @@ export const SCHEMA: string[] = [
     scheduled_time TEXT
   )`,
   `CREATE INDEX IF NOT EXISTS idx_live_start ON live_sessions(start_at)`,
+  `CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    username TEXT NOT NULL UNIQUE,
+    pass_hash TEXT NOT NULL,
+    pass_salt TEXT NOT NULL,
+    role TEXT NOT NULL DEFAULT 'Staf',
+    active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  )`,
+  `CREATE TABLE IF NOT EXISTS audit_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    at TEXT NOT NULL DEFAULT (datetime('now')),
+    user_name TEXT NOT NULL,
+    action TEXT NOT NULL,
+    area TEXT NOT NULL,
+    summary TEXT,
+    method TEXT NOT NULL,
+    path TEXT NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_audit_at ON audit_log(at)`,
+  `CREATE TABLE IF NOT EXISTS agenda (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL,
+    notes TEXT,
+    kind TEXT NOT NULL DEFAULT 'kegiatan',
+    category TEXT,
+    start_date TEXT NOT NULL,
+    start_time TEXT,
+    end_date TEXT,
+    assignee TEXT,
+    repeat TEXT NOT NULL DEFAULT 'none',
+    repeat_until TEXT,
+    done TEXT,
+    created_by TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  )`,
   `CREATE TABLE IF NOT EXISTS settlements (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     store TEXT NOT NULL,

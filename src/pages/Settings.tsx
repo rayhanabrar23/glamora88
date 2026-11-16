@@ -3,7 +3,7 @@ import { api } from '../lib/api'
 import { int } from '../lib/format'
 import { useRefs } from '../lib/refs'
 import { useData } from '../lib/useData'
-import { Button, Callout, Card, confirmDelete, Field, IconButton, Input, PageHeader, Select, Table, td, tdNum, th, useToast } from '../components/ui'
+import { Button, Callout, Card, confirmDelete, Field, IconButton, Input, Modal, PageHeader, Select, Table, td, tdNum, th, useToast } from '../components/ui'
 import type { Store } from '../../shared/types'
 import { parseTeamCommission, type TeamMember } from '../../shared/commission'
 import { lockOwner, OwnerGate } from '../components/OwnerGate'
@@ -45,7 +45,13 @@ function SettingsBody() {
         <Stores onChange={refs.reload} />
       </div>
       <div className="mt-4">
+        <Accounts />
+      </div>
+      <div className="mt-4">
         <TeamCommissionCard raw={refs.settings.team_commission} onSaved={refs.reload} />
+      </div>
+      <div className="mt-4">
+        <AuditLog />
       </div>
       <div className="mt-4">
         <DataTools />
@@ -77,6 +83,165 @@ function Rates({ settings, onSaved }: { settings: Record<string, string>; onSave
           </Field>
         ))}
       </div>
+    </Card>
+  )
+}
+
+// ---------- Akun tim ----------
+type UserRow = { id: number; name: string; username: string; role: string; active: number; created_at: string }
+function Accounts() {
+  const { data, reload } = useData<UserRow[]>('/users')
+  const [form, setForm] = useState<{ id?: number; name: string; username: string; role: string; password: string } | null>(null)
+  const toast = useToast()
+  async function save() {
+    if (!form) return
+    try {
+      if (form.id) await api.put(`/users/${form.id}`, { name: form.name, role: form.role, ...(form.password ? { password: form.password } : {}) })
+      else await api.post('/users', form)
+      toast(form.id ? 'Akun diperbarui' : 'Akun dibuat')
+      setForm(null)
+      reload()
+    } catch (e) {
+      toast((e as Error).message, 'bad')
+    }
+  }
+  async function setActive(u: UserRow, active: boolean) {
+    if (!active && !window.confirm(`Nonaktifkan akun ${u.name}? Ia tidak bisa masuk lagi, riwayatnya tetap tersimpan.`)) return
+    await api.put(`/users/${u.id}`, { active })
+    toast(active ? 'Akun diaktifkan' : 'Akun dinonaktifkan')
+    reload()
+  }
+  const users = data ?? []
+  const anyActive = users.some((u) => u.active)
+  return (
+    <Card
+      title="Akun tim"
+      subtitle="Login masing-masing orang, supaya setiap perubahan tercatat atas namanya"
+      actions={
+        <Button variant="primary" icon="plus" onClick={() => setForm({ name: '', username: '', role: 'Staf', password: '' })}>
+          Tambah akun
+        </Button>
+      }
+      padded={false}
+    >
+      {!anyActive && (
+        <div className="px-5 pt-4">
+          <Callout tone="info" title="Masih memakai kata sandi tim bersama">
+            Begitu ada satu akun aktif, kata sandi tim bersama berhenti berlaku dan semua orang masuk dengan nama pengguna masing-masing. Owner tetap bisa masuk dengan nama pengguna “owner” dan kata sandi owner.
+          </Callout>
+        </div>
+      )}
+      {users.length ? (
+        <Table
+          head={
+            <tr>
+              <th className={th}>Nama</th>
+              <th className={th}>Nama pengguna</th>
+              <th className={th}>Peran</th>
+              <th className={th}>Status</th>
+              <th className={th}></th>
+            </tr>
+          }
+        >
+          {users.map((u) => (
+            <tr key={u.id} className={u.active ? '' : 'opacity-60'}>
+              <td className={`${td} font-medium text-ink`}>{u.name}</td>
+              <td className={`${td} text-ink-2`}>{u.username}</td>
+              <td className={td}>{u.role}</td>
+              <td className={td}>{u.active ? <span className="text-good">Aktif</span> : <span className="text-muted">Nonaktif</span>}</td>
+              <td className={`${td} whitespace-nowrap text-right`}>
+                <IconButton icon="edit" label={`Ubah ${u.name}`} onClick={() => setForm({ id: u.id, name: u.name, username: u.username, role: u.role, password: '' })} />
+                <Button className="ml-1 h-8 px-3 text-[13px]" onClick={() => setActive(u, !u.active)}>
+                  {u.active ? 'Nonaktifkan' : 'Aktifkan'}
+                </Button>
+              </td>
+            </tr>
+          ))}
+        </Table>
+      ) : (
+        <p className="px-5 py-4 text-[14px] text-muted">Belum ada akun.</p>
+      )}
+      {form && (
+        <Modal
+          open
+          title={form.id ? `Ubah akun ${form.name}` : 'Tambah akun'}
+          onClose={() => setForm(null)}
+          footer={
+            <>
+              <Button onClick={() => setForm(null)}>Batal</Button>
+              <Button variant="primary" onClick={save} disabled={!form.name.trim() || (!form.id && (!form.username.trim() || form.password.length < 6))}>
+                Simpan
+              </Button>
+            </>
+          }
+        >
+          <div className="grid grid-cols-1 items-start gap-4 sm:grid-cols-2">
+            <Field label="Nama" hint="Sama dengan nama di Komisi tim & host live">
+              <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Contoh: Tiara" />
+            </Field>
+            <Field label="Peran">
+              <Select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} options={['Staf', 'Admin', 'Host live', 'Owner']} />
+            </Field>
+            <Field label="Nama pengguna" hint={form.id ? 'Tidak bisa diubah' : 'Huruf kecil tanpa spasi, untuk login'}>
+              <Input disabled={!!form.id} autoCapitalize="none" value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value.toLowerCase().replace(/\s/g, '') })} placeholder="tiara" />
+            </Field>
+            <Field label={form.id ? 'Kata sandi baru' : 'Kata sandi'} hint={form.id ? 'Kosongkan bila tidak diganti' : 'Minimal 6 karakter'}>
+              <Input type="password" autoComplete="new-password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
+            </Field>
+          </div>
+        </Modal>
+      )}
+    </Card>
+  )
+}
+
+// ---------- Riwayat perubahan ----------
+type AuditRow = { id: number; at: string; user_name: string; action: string; area: string; summary: string | null }
+const ACTION_TONE: Record<string, string> = { tambah: 'text-good', ubah: 'text-info', hapus: 'text-bad', finalisasi: 'text-gold' }
+function AuditLog() {
+  const [user, setUser] = useState('')
+  const [area, setArea] = useState('')
+  const { data } = useData<{ rows: AuditRow[]; users: string[]; areas: string[] }>(`/audit?limit=200${user ? `&user=${encodeURIComponent(user)}` : ''}${area ? `&area=${encodeURIComponent(area)}` : ''}`)
+  const when = (s: string) => new Date(`${s.replace(' ', 'T')}Z`).toLocaleString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+  return (
+    <Card
+      title="Riwayat perubahan"
+      subtitle="Siapa menambah, mengubah, atau menghapus data, dan kapan"
+      padded={false}
+    >
+      <div className="flex flex-wrap gap-2 px-5 pt-4 pb-3">
+        <Select className="h-9 w-full sm:w-[180px]" aria-label="Filter orang" value={user} onChange={(e) => setUser(e.target.value)} options={[{ value: '', label: 'Semua orang' }, ...(data?.users ?? [])]} />
+        <Select className="h-9 w-full sm:w-[200px]" aria-label="Filter bagian" value={area} onChange={(e) => setArea(e.target.value)} options={[{ value: '', label: 'Semua bagian' }, ...(data?.areas ?? [])]} />
+      </div>
+      {!data ? (
+        <p className="px-5 py-4 text-[14px] text-muted">Memuat…</p>
+      ) : !data.rows.length ? (
+        <p className="px-5 py-4 text-[14px] text-muted">Belum ada perubahan tercatat.</p>
+      ) : (
+        <div className="max-h-[440px] overflow-y-auto">
+          <Table
+            head={
+              <tr>
+                <th className={th}>Waktu</th>
+                <th className={th}>Orang</th>
+                <th className={th}>Aksi</th>
+                <th className={th}>Keterangan</th>
+              </tr>
+            }
+          >
+            {data.rows.map((r) => (
+              <tr key={r.id}>
+                <td className={`${td} whitespace-nowrap text-ink-2`}>{when(r.at)}</td>
+                <td className={`${td} whitespace-nowrap font-medium text-ink`}>{r.user_name}</td>
+                <td className={`${td} whitespace-nowrap`}>
+                  <span className={`font-medium capitalize ${ACTION_TONE[r.action] ?? 'text-ink-2'}`}>{r.action}</span> <span className="text-ink-2">{r.area}</span>
+                </td>
+                <td className={`${td} text-[13px] text-muted`}>{r.summary ?? '–'}</td>
+              </tr>
+            ))}
+          </Table>
+        </div>
+      )}
     </Card>
   )
 }

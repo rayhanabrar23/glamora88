@@ -16,14 +16,22 @@ import Reports from './pages/Reports'
 import Expenses from './pages/Expenses'
 import Settings from './pages/Settings'
 import Kpi from './pages/Kpi'
+import Agenda from './pages/Agenda'
+import { MeContext, type Me } from './lib/me'
 
 export default function App() {
   const [auth, setAuth] = useState<'checking' | 'in' | 'out'>('checking')
-  useEffect(() => {
+  const [me, setMe] = useState<{ user: Me | null; accounts: boolean }>({ user: null, accounts: false })
+  const check = () =>
     api
-      .get('/me')
-      .then(() => setAuth('in'))
+      .get<{ user: Me; accounts: boolean }>('/me')
+      .then((r) => {
+        setMe({ user: r.user, accounts: r.accounts })
+        setAuth('in')
+      })
       .catch(() => setAuth('out'))
+  useEffect(() => {
+    check()
     const h = () => setAuth('out')
     window.addEventListener('g88:unauthorized', h)
     return () => window.removeEventListener('g88:unauthorized', h)
@@ -39,8 +47,9 @@ export default function App() {
           <Loading />
         </div>
       ) : auth === 'out' ? (
-        <Login onSuccess={() => setAuth('in')} />
+        <Login onSuccess={check} />
       ) : (
+        <MeContext.Provider value={me}>
         <BrowserRouter>
           <Layout onLogout={logout}>
             <Routes>
@@ -55,11 +64,13 @@ export default function App() {
               <Route path="/proyeksi" element={<Projection />} />
               <Route path="/laporan" element={<Reports />} />
               <Route path="/kpi" element={<Kpi />} />
+              <Route path="/agenda" element={<Agenda />} />
               <Route path="/pengaturan" element={<Settings />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </Layout>
         </BrowserRouter>
+        </MeContext.Provider>
       )}
     </ToastProvider>
   )

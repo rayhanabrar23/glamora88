@@ -2,11 +2,15 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import type { DashboardData, Insight } from '../../shared/dashboard'
 import { useData } from '../lib/useData'
+import { useMe } from '../lib/me'
+import { api } from '../lib/api'
+import { expandAgenda, isForPerson, type AgendaItem } from '../../shared/agenda'
 import { Icon } from './Icon'
-import { cx } from './ui'
+import { Button, cx, Field, Input, Modal, useToast } from './ui'
 
 const NAV = [
   { to: '/', label: 'Ringkasan', icon: 'dashboard', end: true },
+  { to: '/agenda', label: 'Agenda Tim', icon: 'calendar' },
   { to: '/penjualan', label: 'Penjualan', icon: 'sales' },
   { to: '/pencairan', label: 'Pencairan TikTok', icon: 'wallet' },
   { to: '/pembelian', label: 'Pembelian & Impor', icon: 'purchase' },
@@ -154,28 +158,48 @@ function Notifications() {
   const [open, setOpen] = useState(false)
   const [tab, setTab] = useState<'all' | 'need'>('all')
   const { data } = useData<DashboardData>('/dashboard')
+  const { data: agenda, reload: reloadAgenda } = useData<{ items: AgendaItem[] }>('/agenda')
+  const { user } = useMe()
+  const navigate = useNavigate()
+  useEffect(() => {
+    const h = () => reloadAgenda()
+    window.addEventListener('g88:agenda', h)
+    return () => window.removeEventListener('g88:agenda', h)
+  }, [reloadAgenda])
   const ref = useClickOutside(() => setOpen(false))
+  // pengingat milik saya (atau untuk semua) yang jatuh tempo hari ini / sudah lewat dan belum selesai
+  const reminders = useMemo(() => {
+    const d = new Date()
+    const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    const from = new Date(d.getTime() - 60 * 86400000)
+    const fromIso = `${from.getFullYear()}-${String(from.getMonth() + 1).padStart(2, '0')}-${String(from.getDate()).padStart(2, '0')}`
+    const mine = (agenda?.items ?? []).filter((it) => isForPerson(it, user && user.id > 0 ? user.name : null))
+    return expandAgenda(mine, fromIso, today)
+      .filter((o) => !o.done && (o.item.kind === 'pengingat' || o.date === today))
+      .map((o) => ({ ...o, late: o.date < today }))
+  }, [agenda, user])
   const all = data?.insights ?? []
   const need = all.filter((i) => i.tone === 'warning' || i.tone === 'critical')
   const items = tab === 'all' ? all : need
+  const badge = need.length + reminders.filter((r) => r.item.kind === 'pengingat').length
   return (
     <div ref={ref} className="relative">
       <button
         onClick={() => setOpen((o) => !o)}
-        aria-label={`Catatan (${need.length} perlu perhatian)`}
+        aria-label={`Catatan (${badge} perlu perhatian)`}
         aria-expanded={open}
         className={cx('relative flex h-10 w-10 items-center justify-center rounded-full border border-line bg-white text-ink-2 transition-colors hover:bg-white hover:text-navy', open ? 'border-gold text-navy' : '')}
       >
         <Icon name="bell" size={18} />
-        {need.length > 0 && (
-          <span className="num absolute -top-1 -right-1 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-bad px-1 text-[10.5px] font-semibold text-white ring-2 ring-white">{need.length}</span>
+        {badge > 0 && (
+          <span className="num absolute -top-1 -right-1 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-bad px-1 text-[10.5px] font-semibold text-white ring-2 ring-white">{badge}</span>
         )}
       </button>
       {open && (
         <div className="glass-strong pop-in absolute top-12 right-0 z-50 w-[min(380px,calc(100vw-2rem))] rounded-3xl">
           <div className="flex items-center justify-between px-5 pt-4">
             <div className="flex items-center gap-2 text-[15px] font-semibold text-ink">
-              Catatan <span className="num rounded-full bg-navy px-2 py-0.5 text-[11px] text-white">{all.length}</span>
+              Catatan <span className="num rounded-full bg-navy px-2 py-0.5 text-[11px] text-white">{all.length + reminders.length}</span>
             </div>
             <div className="inline-flex rounded-full bg-line-soft p-0.5 text-[12.5px] font-medium">
               {(
@@ -191,6 +215,34 @@ function Notifications() {
             </div>
           </div>
           <div className="mt-3 max-h-[52vh] overflow-y-auto px-2 pb-2">
+            {reminders.length > 0 && (
+              <div className="mb-1 border-b border-line-soft pb-1">
+                <div className="px-3 pt-1 pb-1 text-[11.5px] font-semibold tracking-wide text-muted uppercase">Agenda & pengingat</div>
+                {reminders.map((r) => (
+                  <button
+                    key={`${r.item.id}-${r.date}`}
+                    type="button"
+                    onClick={() => {
+                      setOpen(false)
+                      navigate('/agenda')
+                    }}
+                    className="flex w-full gap-3 rounded-2xl px-3 py-2.5 text-left transition-colors hover:bg-canvas/70"
+                  >
+                    <span className={cx('mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl', r.late ? 'bg-bad-soft text-bad' : 'bg-gold-soft text-[#7a5c2b]')}>
+                      <Icon name={r.item.kind === 'pengingat' ? 'bell' : 'calendar'} size={15} />
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block text-[13.5px] font-semibold text-ink">{r.item.title}</span>
+                      <span className="mt-0.5 block text-[12.5px] text-ink-2">
+                        {r.late ? `Terlewat · ${new Date(`${r.date}T00:00:00`).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })}` : 'Hari ini'}
+                        {r.item.start_time ? ` · ${r.item.start_time}` : ''}
+                        {r.item.assignee ? ` · ${r.item.assignee}` : ''}
+                      </span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
             {items.length ? (
               items.map((i) => (
                 <div key={i.title} className="flex gap-3 rounded-2xl px-3 py-3 transition-colors hover:bg-canvas/70">
@@ -203,7 +255,7 @@ function Notifications() {
                   </div>
                 </div>
               ))
-            ) : (
+            ) : reminders.length ? null : (
               <div className="px-3 py-8 text-center text-[13.5px] text-muted">Tidak ada catatan</div>
             )}
           </div>
@@ -216,6 +268,105 @@ function Notifications() {
   )
 }
 
+function UserMenu({ onLogout }: { onLogout: () => void }) {
+  const { user } = useMe()
+  const [open, setOpen] = useState(false)
+  const [pwOpen, setPwOpen] = useState(false)
+  const ref = useClickOutside(() => setOpen(false))
+  if (!user) return null
+  const initials = user.name
+    .split(/\s+/)
+    .map((w) => w[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase()
+  return (
+    <div ref={ref} className="relative shrink-0">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-label={`Akun: ${user.name}`}
+        aria-expanded={open}
+        className={cx('flex h-10 items-center gap-2 rounded-full border border-line bg-white pr-1 pl-1 text-[13.5px] font-medium text-ink-2 transition-colors hover:text-navy sm:pr-3.5', open ? 'border-gold text-navy' : '')}
+      >
+        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-navy text-[12px] font-semibold text-white">{initials || '?'}</span>
+        <span className="hidden max-w-[120px] truncate sm:inline">{user.name}</span>
+      </button>
+      {open && (
+        <div className="glass-strong pop-in absolute top-12 right-0 z-50 w-[240px] rounded-2xl p-1.5">
+          <div className="px-3 pt-2 pb-2.5">
+            <div className="text-[14px] font-semibold text-ink">{user.name}</div>
+            <div className="text-[12.5px] text-muted">{user.role}</div>
+          </div>
+          {user.id > 0 && (
+            <button
+              type="button"
+              onClick={() => {
+                setOpen(false)
+                setPwOpen(true)
+              }}
+              className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left text-[13.5px] font-medium text-ink-2 hover:bg-gold-soft/70 hover:text-navy"
+            >
+              <Icon name="lock" size={15} /> Ganti kata sandi
+            </button>
+          )}
+          <button type="button" onClick={onLogout} className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left text-[13.5px] font-medium text-ink-2 hover:bg-gold-soft/70 hover:text-navy">
+            <Icon name="logout" size={15} /> Keluar
+          </button>
+        </div>
+      )}
+      {pwOpen && <ChangePassword onClose={() => setPwOpen(false)} />}
+    </div>
+  )
+}
+
+function ChangePassword({ onClose }: { onClose: () => void }) {
+  const [old, setOld] = useState('')
+  const [pw, setPw] = useState('')
+  const [pw2, setPw2] = useState('')
+  const [err, setErr] = useState('')
+  const toast = useToast()
+  async function save() {
+    setErr('')
+    if (pw !== pw2) return setErr('Kata sandi baru tidak sama')
+    try {
+      await api.put('/me/password', { old, password: pw })
+      toast('Kata sandi diganti')
+      onClose()
+    } catch (e) {
+      setErr((e as Error).message)
+    }
+  }
+  return (
+    <Modal
+      open
+      title="Ganti kata sandi"
+      onClose={onClose}
+      footer={
+        <>
+          <Button onClick={onClose}>Batal</Button>
+          <Button variant="primary" onClick={save} disabled={!old || pw.length < 6}>
+            Simpan
+          </Button>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-4">
+        <Field label="Kata sandi lama">
+          <Input type="password" autoComplete="current-password" value={old} onChange={(e) => setOld(e.target.value)} />
+        </Field>
+        <Field label="Kata sandi baru" hint="Minimal 6 karakter">
+          <Input type="password" autoComplete="new-password" value={pw} onChange={(e) => setPw(e.target.value)} />
+        </Field>
+        <Field label="Ulangi kata sandi baru">
+          <Input type="password" autoComplete="new-password" value={pw2} onChange={(e) => setPw2(e.target.value)} />
+        </Field>
+        {err && <p className="text-[13px] text-bad">{err}</p>}
+      </div>
+    </Modal>
+  )
+}
+
 export function Layout({ children, onLogout }: { children: ReactNode; onLogout: () => void }) {
   const [open, setOpen] = useState(false)
   const { pathname } = useLocation()
@@ -225,7 +376,7 @@ export function Layout({ children, onLogout }: { children: ReactNode; onLogout: 
       <Rail onLogout={onLogout} />
 
       <header className="sticky top-0 z-30 px-3 pt-3 sm:px-6 sm:pt-4">
-        <div className="glass mx-auto flex h-16 max-w-[1320px] items-center gap-4 rounded-[22px] px-4 sm:px-5">
+        <div className="glass mx-auto flex h-16 max-w-[1320px] items-center gap-2 rounded-[22px] px-3 sm:gap-4 sm:px-5">
           <Brand />
           <div className="flex flex-1 justify-center">
             <QuickSearch />
@@ -235,7 +386,8 @@ export function Layout({ children, onLogout }: { children: ReactNode; onLogout: 
             {today}
           </div>
           <Notifications />
-          <button className="flex h-10 w-10 items-center justify-center rounded-full border border-line bg-white text-ink-2 hover:bg-white lg:hidden" onClick={() => setOpen(true)} aria-label="Buka menu">
+          <UserMenu onLogout={onLogout} />
+          <button className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-line bg-white text-ink-2 hover:bg-white lg:hidden" onClick={() => setOpen(true)} aria-label="Buka menu">
             <Icon name="menu" size={20} />
           </button>
         </div>
