@@ -15,6 +15,7 @@ const NAV = [
   { to: '/pencairan', label: 'Pencairan TikTok', icon: 'wallet' },
   { to: '/pembelian', label: 'Pembelian & Impor', icon: 'purchase' },
   { to: '/produk', label: 'Produk & Stok', icon: 'product' },
+  { to: '/qr', label: 'QR & Gudang', icon: 'qr' },
   { to: '/live', label: 'Sesi Live', icon: 'live' },
   { to: '/boost', label: 'Boost & Promosi', icon: 'boost' },
   { to: '/biaya', label: 'Biaya Operasional', icon: 'expense' },

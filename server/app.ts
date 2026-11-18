@@ -2,6 +2,7 @@ import { computeRestock, DEFAULT_RESTOCK, type RestockParams } from '../shared/r
 import { Hono } from 'hono'
 import { checkOwnerPassword, checkPassword, clearOwnerCookie, clearSessionCookie, hashPassword, isOwner, makeOwnerCookie, makeSessionCookie, sessionUid, verifyPassword } from './auth'
 import type { AgendaItem } from '../shared/agenda'
+import { moveKind } from '../shared/moves'
 import { computeKpi, kpiMonthKey, parseKpiConfig, parseKpiMonth, type KpiConfig, type KpiContext, type KpiMonthRecord } from '../shared/kpi'
 import { ensureSchema, getSettings, num, runBatched, type Env } from './db'
 import { DEFAULT_SETTINGS } from './schema'
@@ -81,6 +82,7 @@ const AREAS: [RegExp, string][] = [
   [/^\/api\/settlements/, 'Pencairan TikTok'],
   [/^\/api\/purchases/, 'Pembelian & impor'],
   [/^\/api\/(products|variants)/, 'Produk & varian'],
+  [/^\/api\/stock\/(moves|receive)/, 'Keluar-masuk barang'],
   [/^\/api\/stock/, 'Stok opname'],
   [/^\/api\/sku-map/, 'Pemetaan SKU'],
   [/^\/api\/boosts/, 'Boost'],
@@ -387,6 +389,80 @@ app.post('/stock/opname', async (c) => {
     )
   if (stmts.length) await runBatched(c.env.DB, stmts)
   return c.json({ adjusted: stmts.length })
+})
+
+// ---------- Barang masuk & keluar (scan QR) ----------
+app.get('/stock/moves', async (c) => {
+  const sku = c.req.query('sku')
+  const rows = sku
+    ? await c.env.DB.prepare('SELECT * FROM stock_moves WHERE sku = ? ORDER BY id DESC LIMIT 100').bind(sku).all()
+    : await c.env.DB.prepare('SELECT * FROM stock_moves ORDER BY id DESC LIMIT 300').all()
+  return c.json(rows.results)
+})
+app.post('/stock/moves', async (c) => {
+  // body: { date, kind, note?, items: [{ sku, qty }] }
+  const b = await c.req.json<{ date?: string; kind: string; note?: string; items: { sku: string; qty: number }[] }>()
+  const k = moveKind(b.kind)
+  if (!k || k.value === 'penerimaan') return c.json({ error: 'Jenis tidak dikenali' }, 400)
+  const date = isDate(b.date) ? b.date! : new Date().toISOString().slice(0, 10)
+  const items = (b.items ?? []).map((x) => ({ sku: String(x.sku), qty: Math.round(num(x.qty)) })).filter((x) => x.sku && x.qty > 0)
+  if (!items.length) return c.json({ error: 'Belum ada barang yang discan' }, 400)
+  const known = new Set((await c.env.DB.prepare('SELECT sku FROM variants').all<{ sku: string }>()).results.map((r) => r.sku))
+  const unknown = items.filter((x) => !known.has(x.sku)).map((x) => x.sku)
+  if (unknown.length) return c.json({ error: `SKU tidak dikenal: ${unknown.join(', ')}` }, 400)
+  const user = c.get('user').name
+  for (const it of items) {
+    let adj: number | null = null
+    if (k.affectsStock) {
+      const r = await c.env.DB.prepare('INSERT INTO stock_adjustments (adj_date, sku, qty_delta, reason) VALUES (?,?,?,?) RETURNING id')
+        .bind(date, it.sku, k.direction === 'masuk' ? it.qty : -it.qty, `${k.label}${b.note ? ` · ${b.note}` : ''} (scan ${user})`)
+        .first<{ id: number }>()
+      adj = r?.id ?? null
+    }
+    await c.env.DB.prepare('INSERT INTO stock_moves (move_date, sku, qty, direction, kind, note, user_name, adjustment_id) VALUES (?,?,?,?,?,?,?,?)')
+      .bind(date, it.sku, it.qty, k.direction, k.value, str(b.note), user, adj)
+      .run()
+  }
+  return c.json({ ok: true, count: items.reduce((a, x) => a + x.qty, 0) })
+})
+app.delete('/stock/moves/:id', async (c) => {
+  const m = await c.env.DB.prepare('SELECT adjustment_id FROM stock_moves WHERE id = ?').bind(c.req.param('id')).first<{ adjustment_id: number | null }>()
+  if (!m) return c.json({ error: 'Catatan tidak ditemukan' }, 404)
+  if (m.adjustment_id) await c.env.DB.prepare('DELETE FROM stock_adjustments WHERE id = ?').bind(m.adjustment_id).run()
+  await c.env.DB.prepare('DELETE FROM stock_moves WHERE id = ?').bind(c.req.param('id')).run()
+  return c.json({ ok: true })
+})
+app.post('/stock/receive', async (c) => {
+  // penerimaan batch: { purchase_id, date, items: [{ sku, qty }] } → batch jadi "Tiba", selisih dicatat
+  const b = await c.req.json<{ purchase_id: number; date?: string; items: { sku: string; qty: number }[] }>()
+  const p = await c.env.DB.prepare('SELECT * FROM purchases WHERE id = ?').bind(b.purchase_id).first<{ id: number; name: string; status: string }>()
+  if (!p) return c.json({ error: 'Batch tidak ditemukan' }, 404)
+  if (p.status === 'Tiba') return c.json({ error: `${p.name} sudah tercatat tiba` }, 400)
+  const date = isDate(b.date) ? b.date! : new Date().toISOString().slice(0, 10)
+  const expected = new Map<string, number>()
+  for (const it of (await c.env.DB.prepare('SELECT sku, qty FROM purchase_items WHERE purchase_id = ?').bind(p.id).all<{ sku: string; qty: number }>()).results)
+    expected.set(it.sku, (expected.get(it.sku) ?? 0) + it.qty)
+  const got = new Map<string, number>()
+  for (const it of b.items ?? []) if (it.sku && num(it.qty) > 0) got.set(String(it.sku), (got.get(String(it.sku)) ?? 0) + Math.round(num(it.qty)))
+  const user = c.get('user').name
+  const diffs: { sku: string; diff: number }[] = []
+  for (const sku of new Set([...expected.keys(), ...got.keys()])) {
+    const diff = (got.get(sku) ?? 0) - (expected.get(sku) ?? 0)
+    let adj: number | null = null
+    if (diff !== 0) {
+      diffs.push({ sku, diff })
+      const r = await c.env.DB.prepare('INSERT INTO stock_adjustments (adj_date, sku, qty_delta, reason) VALUES (?,?,?,?) RETURNING id')
+        .bind(date, sku, diff, `Selisih penerimaan ${p.name} (scan ${user})`)
+        .first<{ id: number }>()
+      adj = r?.id ?? null
+    }
+    if ((got.get(sku) ?? 0) > 0 || adj)
+      await c.env.DB.prepare('INSERT INTO stock_moves (move_date, sku, qty, direction, kind, ref, note, user_name, adjustment_id) VALUES (?,?,?,?,?,?,?,?,?)')
+        .bind(date, sku, got.get(sku) ?? 0, 'masuk', 'penerimaan', p.name, diff ? `isi batch ${expected.get(sku) ?? 0}, selisih ${diff > 0 ? '+' : ''}${diff}` : null, user, adj)
+        .run()
+  }
+  await c.env.DB.prepare("UPDATE purchases SET status = 'Tiba', arrival_date = ? WHERE id = ?").bind(date, p.id).run()
+  return c.json({ ok: true, diffs })
 })
 
 app.get('/stock/adjustments', async (c) =>
@@ -1110,7 +1186,7 @@ app.delete('/live/:id', async (c) => {
 })
 
 // ---------- Cadangan & impor data lengkap ----------
-const TABLES = ['settings', 'stores', 'products', 'variants', 'sku_map', 'sales', 'purchases', 'purchase_items', 'stock_adjustments', 'boosts', 'expenses', 'live_sessions', 'settlements', 'agenda'] as const
+const TABLES = ['settings', 'stores', 'products', 'variants', 'sku_map', 'sales', 'purchases', 'purchase_items', 'stock_adjustments', 'boosts', 'expenses', 'live_sessions', 'settlements', 'agenda', 'stock_moves'] as const
 
 app.get('/data/export', async (c) => {
   const out: Record<string, unknown[]> = {}

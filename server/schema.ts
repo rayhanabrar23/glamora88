@@ -118,6 +118,20 @@ export const SCHEMA: string[] = [
     scheduled_time TEXT
   )`,
   `CREATE INDEX IF NOT EXISTS idx_live_start ON live_sessions(start_at)`,
+  `CREATE TABLE IF NOT EXISTS stock_moves (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    at TEXT NOT NULL DEFAULT (datetime('now')),
+    move_date TEXT NOT NULL,
+    sku TEXT NOT NULL,
+    qty INTEGER NOT NULL,
+    direction TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    ref TEXT,
+    note TEXT,
+    user_name TEXT,
+    adjustment_id INTEGER
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_moves_date ON stock_moves(move_date)`,
   `CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,

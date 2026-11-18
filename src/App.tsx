@@ -17,6 +17,7 @@ import Expenses from './pages/Expenses'
 import Settings from './pages/Settings'
 import Kpi from './pages/Kpi'
 import Agenda from './pages/Agenda'
+import Qr, { QrSku } from './pages/Qr'
 import { MeContext, type Me } from './lib/me'
 
 export default function App() {
@@ -65,6 +66,8 @@ export default function App() {
               <Route path="/laporan" element={<Reports />} />
               <Route path="/kpi" element={<Kpi />} />
               <Route path="/agenda" element={<Agenda />} />
+              <Route path="/qr" element={<Qr />} />
+              <Route path="/qr/:sku" element={<QrSku />} />
               <Route path="/pengaturan" element={<Settings />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
