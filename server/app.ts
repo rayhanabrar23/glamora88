@@ -1,6 +1,6 @@
 import { computeRestock, DEFAULT_RESTOCK, type RestockParams } from '../shared/restock'
 import { Hono } from 'hono'
-import { checkOwnerPassword, checkPassword, clearOwnerCookie, clearSessionCookie, hashPassword, isOwner, makeOwnerCookie, makeSessionCookie, sessionUid, verifyPassword } from './auth'
+import { checkOwnerPassword, checkPassword, clearOwnerCookie, clearSessionCookie, hashPassword, isOwner, makeOwnerCookie, makeSessionCookie, SESSION_TTL, sessionInfo, verifyPassword } from './auth'
 import type { AgendaItem } from '../shared/agenda'
 import { moveKind } from '../shared/moves'
 import { BACKUP_TABLES, exportTables, listBackups, makeBackup, readBackup, restoreTables } from './backup'
@@ -138,8 +138,11 @@ app.post('/logout', (c) => {
 
 app.use('*', async (c, next) => {
   if (PUBLIC.has(c.req.path)) return next()
-  const uid = await sessionUid(c.req.header('Cookie'), c.env)
-  if (uid == null) return c.json({ error: 'Silakan masuk terlebih dahulu' }, 401)
+  const info = await sessionInfo(c.req.header('Cookie'), c.env)
+  if (!info) return c.json({ error: 'Silakan masuk terlebih dahulu' }, 401)
+  const uid = info.uid
+  // sesi diperpanjang otomatis selama portal dipakai (sisa < 6 jam → cookie baru 12 jam)
+  if (info.exp - Date.now() / 1000 < SESSION_TTL / 2) c.header('Set-Cookie', await makeSessionCookie(c.env, uid), { append: true })
   let user: SessionUser
   if (uid === -1) user = { id: -1, name: 'Owner', role: 'Owner' }
   else if (uid === 0) {

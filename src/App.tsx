@@ -20,6 +20,32 @@ import Agenda from './pages/Agenda'
 import Qr, { QrSku } from './pages/Qr'
 import { MeContext, type Me } from './lib/me'
 
+// penanda per tab: sessionStorage hilang saat tab ditutup
+const TAB_KEY = 'g88_tab'
+const tabFlag = {
+  get: () => {
+    try {
+      return sessionStorage.getItem(TAB_KEY) === '1'
+    } catch {
+      return false
+    }
+  },
+  set: () => {
+    try {
+      sessionStorage.setItem(TAB_KEY, '1')
+    } catch {
+      /* tanpa penyimpanan: tetap jalan, hanya tidak ingat tab */
+    }
+  },
+  clear: () => {
+    try {
+      sessionStorage.removeItem(TAB_KEY)
+    } catch {
+      /* abaikan */
+    }
+  },
+}
+
 export default function App() {
   const [auth, setAuth] = useState<'checking' | 'in' | 'out'>('checking')
   const [me, setMe] = useState<{ user: Me | null; accounts: boolean }>({ user: null, accounts: false })
@@ -37,12 +63,18 @@ export default function App() {
       })
       .catch(() => setAuth('out'))
   useEffect(() => {
-    check()
-    const h = () => setAuth('out')
+    // tab baru (atau tab yang pernah ditutup) wajib login lagi; refresh di tab yang sama tetap masuk
+    if (tabFlag.get()) check()
+    else setAuth('out')
+    const h = () => {
+      tabFlag.clear()
+      setAuth('out')
+    }
     window.addEventListener('g88:unauthorized', h)
     return () => window.removeEventListener('g88:unauthorized', h)
   }, [])
   async function logout() {
+    tabFlag.clear()
     await api.post('/logout').catch(() => {})
     setAuth('out')
   }
@@ -53,7 +85,12 @@ export default function App() {
           <Loading />
         </div>
       ) : auth === 'out' ? (
-        <Login onSuccess={check} />
+        <Login
+          onSuccess={() => {
+            tabFlag.set()
+            check()
+          }}
+        />
       ) : (
         <MeContext.Provider value={{ ...me, refresh: refreshMe }}>
         <BrowserRouter>

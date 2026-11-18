@@ -1,7 +1,8 @@
 // Login sederhana dengan satu kata sandi bersama (APP_PASSWORD).
-// Sesi disimpan di cookie bertanda tangan HMAC, berlaku 30 hari.
+// Sesi disimpan di cookie bertanda tangan HMAC. Cookie tanpa Max-Age (hilang saat browser ditutup);
+// di server berlaku 12 jam dan diperpanjang otomatis selama portal dipakai.
 const COOKIE = 'g88_session'
-const MAX_AGE = 60 * 60 * 24 * 30
+export const SESSION_TTL = 60 * 60 * 12
 
 async function hmac(secret: string, data: string): Promise<string> {
   const key = await crypto.subtle.importKey(
@@ -31,9 +32,9 @@ function secretOf(env: { APP_PASSWORD?: string; SESSION_SECRET?: string }) {
  * angka positif = akun di tabel users.
  */
 export async function makeSessionCookie(env: { APP_PASSWORD?: string; SESSION_SECRET?: string }, uid = 0) {
-  const exp = Math.floor(Date.now() / 1000) + MAX_AGE
+  const exp = Math.floor(Date.now() / 1000) + SESSION_TTL
   const sig = await hmac(secretOf(env), `${exp}.${uid}`)
-  return `${COOKIE}=${exp}.${uid}.${sig}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${MAX_AGE}`
+  return `${COOKIE}=${exp}.${uid}.${sig}; Path=/; HttpOnly; Secure; SameSite=Lax`
 }
 
 export function clearSessionCookie() {
@@ -42,19 +43,17 @@ export function clearSessionCookie() {
 
 /** Mengembalikan id pengguna dari cookie sesi, atau null bila tidak sah. */
 export async function sessionUid(cookieHeader: string | null | undefined, env: { APP_PASSWORD?: string; SESSION_SECRET?: string }): Promise<number | null> {
+  return (await sessionInfo(cookieHeader, env))?.uid ?? null
+}
+
+export async function sessionInfo(cookieHeader: string | null | undefined, env: { APP_PASSWORD?: string; SESSION_SECRET?: string }): Promise<{ uid: number; exp: number } | null> {
   if (!cookieHeader) return null
   const m = cookieHeader.match(new RegExp(`(?:^|;\\s*)${COOKIE}=([^;]+)`))
   if (!m) return null
-  const parts = m[1].split('.')
-  const exp = parts[0]
-  if (!exp || Number(exp) < Date.now() / 1000) return null
-  if (parts.length === 2) {
-    // format lama (sebelum ada akun): dianggap sesi tim bersama
-    return timingSafeEqual(parts[1], await hmac(secretOf(env), exp)) ? 0 : null
-  }
-  const [, uid, sig] = parts
-  if (!/^-?\d+$/.test(uid ?? '') || !sig) return null
-  return timingSafeEqual(sig, await hmac(secretOf(env), `${exp}.${uid}`)) ? Number(uid) : null
+  const [exp, uid, sig] = m[1].split('.')
+  // format lama tanpa uid (cookie 30 hari) tidak berlaku lagi
+  if (!exp || Number(exp) < Date.now() / 1000 || !/^-?\d+$/.test(uid ?? '') || !sig) return null
+  return timingSafeEqual(sig, await hmac(secretOf(env), `${exp}.${uid}`)) ? { uid: Number(uid), exp: Number(exp) } : null
 }
 
 export async function isAuthenticated(cookieHeader: string | null | undefined, env: { APP_PASSWORD?: string; SESSION_SECRET?: string }): Promise<boolean> {
@@ -90,7 +89,7 @@ const ownerSecret = (env: OwnerEnv) => `${secretOf(env)}:owner:${env.OWNER_PASSW
 export async function makeOwnerCookie(env: OwnerEnv, uid: number) {
   const exp = Math.floor(Date.now() / 1000) + OWNER_MAX_AGE
   const sig = await hmac(ownerSecret(env), `owner.${exp}.${uid}`)
-  return `${OWNER_COOKIE}=${exp}.${uid}.${sig}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${OWNER_MAX_AGE}`
+  return `${OWNER_COOKIE}=${exp}.${uid}.${sig}; Path=/; HttpOnly; Secure; SameSite=Lax`
 }
 export function clearOwnerCookie() {
   return `${OWNER_COOKIE}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`
