@@ -111,11 +111,14 @@ app.post('/login', async (c) => {
       dummyHash = dummyHash ?? (await hashPassword('glamora-dummy'))
       await verifyPassword(password, dummyHash.hash, dummyHash.salt)
     }
+  } else if (checkOwnerPassword(password, c.env)) {
+    // tanpa nama pengguna: kata sandi owner langsung masuk sebagai owner
+    uid = -1
   } else if (!(await accountsEnabled(db))) {
     if (!c.env.APP_PASSWORD) return c.json({ error: 'APP_PASSWORD belum diatur di Cloudflare (lihat README).' }, 503)
     if (checkPassword(password, c.env)) uid = 0
-  } else {
-    return c.json({ error: 'Masukkan nama pengguna. Kata sandi tim bersama sudah tidak dipakai.' }, 401)
+  } else if (checkPassword(password, c.env)) {
+    return c.json({ error: 'Kata sandi tim bersama sudah tidak dipakai. Masuk dengan nama pengguna masing-masing.' }, 401)
   }
   if (uid == null) {
     await recordFailure(db, [userKey, ipKey])

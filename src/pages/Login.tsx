@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { api } from '../lib/api'
 import { Button, Input } from '../components/ui'
 import { Icon } from '../components/Icon'
@@ -7,15 +7,8 @@ export default function Login({ onSuccess }: { onSuccess: () => void }) {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [show, setShow] = useState(false)
-  const [accounts, setAccounts] = useState<boolean | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
-  useEffect(() => {
-    api
-      .get<{ accounts: boolean }>('/login-info')
-      .then((r) => setAccounts(r.accounts))
-      .catch(() => setAccounts(false))
-  }, [])
   async function submit(e: React.FormEvent) {
     e.preventDefault()
     setBusy(true)
@@ -47,7 +40,7 @@ export default function Login({ onSuccess }: { onSuccess: () => void }) {
               autoCapitalize="none"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              placeholder={accounts === false ? 'Kosongkan bila memakai kata sandi tim' : 'Contoh: tiara'}
+              placeholder="Kosongkan bila masuk sebagai owner"
             />
           </label>
           <label className="block">
@@ -77,7 +70,7 @@ export default function Login({ onSuccess }: { onSuccess: () => void }) {
             </div>
           </label>
           {error && <p className="text-[13.5px] text-bad">{error}</p>}
-          <Button type="submit" variant="primary" className="h-11 w-full" disabled={busy || !password || (accounts === true && !username.trim())}>
+          <Button type="submit" variant="primary" className="h-11 w-full" disabled={busy || !password}>
             {busy ? 'Memeriksa…' : 'Masuk'}
           </Button>
         </form>
