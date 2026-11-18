@@ -6,6 +6,7 @@ import { Icon } from '../components/Icon'
 export default function Login({ onSuccess }: { onSuccess: () => void }) {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
+  const [show, setShow] = useState(false)
   const [accounts, setAccounts] = useState<boolean | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -53,7 +54,27 @@ export default function Login({ onSuccess }: { onSuccess: () => void }) {
             <span className="mb-1.5 flex items-center gap-2 text-[13px] font-medium text-ink-2">
               <Icon name="lock" size={14} /> Kata sandi
             </span>
-            <Input type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Masukkan kata sandi" />
+            <div className="relative">
+              <Input
+                type={show ? 'text' : 'password'}
+                autoComplete="current-password"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                className="pr-11"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Masukkan kata sandi"
+              />
+              <button
+                type="button"
+                onClick={() => setShow((v) => !v)}
+                aria-label={show ? 'Sembunyikan kata sandi' : 'Lihat kata sandi'}
+                className="absolute top-1/2 right-2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-lg text-muted hover:text-navy"
+              >
+                <Icon name={show ? 'eyeOff' : 'eye'} size={17} />
+              </button>
+            </div>
           </label>
           {error && <p className="text-[13.5px] text-bad">{error}</p>}
           <Button type="submit" variant="primary" className="h-11 w-full" disabled={busy || !password || (accounts === true && !username.trim())}>
