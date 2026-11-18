@@ -147,9 +147,8 @@ export async function printLabels(items: LabelItem[], size: 'thermal' | 'a4', or
   const svgs = new Map<string, string>()
   for (const it of items) if (!svgs.has(it.sku)) svgs.set(it.sku, await qrSvg(`${origin}/qr/${encodeURIComponent(it.sku)}`))
   const esc = (s: string) => s.replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[ch]!)
-  const rp = (v: number | null) => (v ? `Rp${Math.round(v).toLocaleString('id-ID')}` : '')
-  const one = (it: LabelItem) =>
-    `<div class="lb"><div class="qr">${svgs.get(it.sku)}</div><div class="tx"><div class="sku">${esc(it.sku)}</div><div class="nm">${esc(it.title)}</div><div class="cl">${esc(it.color)}</div><div class="pr">${rp(it.price)}</div></div></div>`
+  // label hanya berisi kode SKU dan warna (tanpa harga)
+  const one = (it: LabelItem) => `<div class="lb"><div class="qr">${svgs.get(it.sku)}</div><div class="tx"><div class="sku">${esc(it.sku)}</div><div class="cl">${esc(it.color)}</div></div></div>`
   const labels = items.flatMap((it) => Array.from({ length: Math.max(0, it.copies) }, () => one(it))).join('')
   const css =
     size === 'thermal'
@@ -162,10 +161,8 @@ ${css}
 body{font-family:Arial,Helvetica,sans-serif;color:#000}
 .qr svg{width:100%;height:100%;display:block}
 .tx{min-width:0;line-height:1.15}
-.sku{font-size:7.5pt;font-weight:700;word-break:break-all}
-.nm{font-size:7pt;margin-top:0.6mm;max-height:2.4em;overflow:hidden}
-.cl{font-size:7pt;font-weight:700;margin-top:0.4mm}
-.pr{font-size:7pt;margin-top:0.4mm}
+.sku{font-size:8pt;font-weight:700;word-break:break-all}
+.cl{font-size:8.5pt;margin-top:1.2mm;word-break:break-word}
 @media screen{body{background:#eee;padding:12px}.lb{background:#fff;margin:0 auto 6px}.sheet{background:#fff;width:194mm;margin:0 auto}}
 </style></head><body>${size === 'a4' ? `<div class="sheet">${labels}</div>` : labels}
 <script>window.onload=function(){setTimeout(function(){window.print()},300)}</script></body></html>`)
