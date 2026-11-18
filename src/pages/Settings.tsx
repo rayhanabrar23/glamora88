@@ -10,15 +10,15 @@ import { lockOwner, OwnerGate } from '../components/OwnerGate'
 import { Avatar } from '../components/Avatar'
 
 const FIELDS: { key: string; label: string; hint: string; kind: 'pct' | 'rp' | 'num' }[] = [
-  { key: 'platform_commission_pct', label: 'Komisi platform', hint: 'Persen dari harga jual', kind: 'pct' },
-  { key: 'dynamic_commission_pct', label: 'Komisi dinamis', hint: 'Persen dari harga jual', kind: 'pct' },
-  { key: 'order_processing_fee', label: 'Biaya pemrosesan per pesanan', hint: 'Rupiah per pesanan', kind: 'rp' },
-  { key: 'heavy_parcel_fee', label: 'Fee pengiriman paket berat', hint: 'Rupiah per pesanan di atas batas berat', kind: 'rp' },
-  { key: 'heavy_parcel_threshold_kg', label: 'Batas berat paket (kg)', hint: 'Default 0,3 kg', kind: 'num' },
-  { key: 'heavy_parcel_share_fallback', label: 'Porsi paket berat (cadangan)', hint: 'Jika data berat kosong', kind: 'pct' },
-  { key: 'live_attribution_buffer_min', label: 'Toleransi penjualan setelah live (menit)', hint: 'Menit setelah live selesai', kind: 'num' },
-  { key: 'fallback_landed_cost', label: 'Landed cost cadangan', hint: 'SKU tanpa harga beli', kind: 'rp' },
-  { key: 'planned_fixed_cost', label: 'Rencana biaya tetap per bulan', hint: 'Untuk titik impas rencana', kind: 'rp' },
+  { key: 'platform_commission_pct', label: 'Komisi platform', hint: '', kind: 'pct' },
+  { key: 'dynamic_commission_pct', label: 'Komisi dinamis', hint: '', kind: 'pct' },
+  { key: 'order_processing_fee', label: 'Biaya pemrosesan per pesanan', hint: '', kind: 'rp' },
+  { key: 'heavy_parcel_fee', label: 'Fee pengiriman paket berat', hint: '', kind: 'rp' },
+  { key: 'heavy_parcel_threshold_kg', label: 'Batas berat paket (kg)', hint: '', kind: 'num' },
+  { key: 'heavy_parcel_share_fallback', label: 'Porsi paket berat (cadangan)', hint: '', kind: 'pct' },
+  { key: 'live_attribution_buffer_min', label: 'Toleransi penjualan setelah live (menit)', hint: '', kind: 'num' },
+  { key: 'fallback_landed_cost', label: 'Landed cost cadangan', hint: '', kind: 'rp' },
+  { key: 'planned_fixed_cost', label: 'Rencana biaya tetap per bulan', hint: '', kind: 'rp' },
 ]
 
 export default function Settings() {
@@ -121,7 +121,6 @@ function Accounts() {
   return (
     <Card
       title="Akun tim"
-      subtitle="Login masing-masing orang, supaya setiap perubahan tercatat atas namanya"
       actions={
         <Button variant="primary" icon="plus" onClick={() => setForm({ name: '', username: '', role: 'Staf', password: '' })}>
           Tambah akun
@@ -131,9 +130,7 @@ function Accounts() {
     >
       {!anyActive && (
         <div className="px-5 pt-4">
-          <Callout tone="info" title="Masih memakai kata sandi tim bersama">
-            Begitu ada satu akun aktif, kata sandi tim bersama berhenti berlaku dan semua orang masuk dengan nama pengguna masing-masing. Owner tetap bisa masuk dengan nama pengguna “owner” dan kata sandi owner.
-          </Callout>
+          <Callout tone="info" title="Masih memakai kata sandi tim bersama" />
         </div>
       )}
       {users.length ? (
@@ -186,13 +183,13 @@ function Accounts() {
           }
         >
           <div className="grid grid-cols-1 items-start gap-4 sm:grid-cols-2">
-            <Field label="Nama" hint="Sama dengan nama di Komisi tim & host live">
+            <Field label="Nama">
               <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Contoh: Tiara" />
             </Field>
             <Field label="Peran">
               <Select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} options={['Staf', 'Admin', 'Host live', 'Owner']} />
             </Field>
-            <Field label="Nama pengguna" hint={form.id ? 'Tidak bisa diubah' : 'Huruf kecil tanpa spasi, untuk login'}>
+            <Field label="Nama pengguna" >
               <Input disabled={!!form.id} autoCapitalize="none" value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value.toLowerCase().replace(/\s/g, '') })} placeholder="tiara" />
             </Field>
             <Field label={form.id ? 'Kata sandi baru' : 'Kata sandi'} hint={form.id ? 'Kosongkan bila tidak diganti' : 'Minimal 6 karakter'}>
@@ -252,7 +249,6 @@ function Backups() {
   return (
     <Card
       title="Cadangan otomatis"
-      subtitle="Dibuat tiap malam pukul 00.00 WIB dan sebelum reset, impor, atau pemulihan. 40 cadangan terakhir disimpan."
       padded={false}
       actions={
         <Button icon="download" onClick={create} disabled={busy}>
@@ -263,7 +259,7 @@ function Backups() {
       {!data ? (
         <p className="px-5 py-4 text-[14px] text-muted">Memuat…</p>
       ) : !data.length ? (
-        <p className="px-5 py-4 text-[14px] text-muted">Belum ada cadangan. Cadangan pertama dibuat malam ini, atau klik “Buat cadangan sekarang”.</p>
+        <p className="px-5 py-4 text-[14px] text-muted">Belum ada cadangan.</p>
       ) : (
         <div className="max-h-[360px] overflow-y-auto">
           <Table
@@ -314,7 +310,6 @@ function AuditLog() {
   return (
     <Card
       title="Riwayat perubahan"
-      subtitle="Siapa menambah, mengubah, atau menghapus data, dan kapan"
       padded={false}
     >
       <div className="flex flex-wrap gap-2 px-5 pt-4 pb-3">
@@ -378,11 +373,10 @@ function TeamCommissionCard({ raw, onSaved }: { raw: string | undefined; onSaved
   return (
     <Card
       title="Komisi tim per orang"
-      subtitle="Persen dari pendapatan bersih bulanan (omzet − potongan TikTok)"
       actions={<Button variant="primary" onClick={save}>Simpan</Button>}
     >
       <div className="grid gap-4 md:grid-cols-[200px_1fr]">
-        <Field label="Mulai dihitung otomatis" hint="Sebelum bulan ini, komisi dicatat manual di Biaya Operasional">
+        <Field label="Mulai dihitung otomatis">
           <Input type="month" value={start} onChange={(e) => setStart(e.target.value)} />
         </Field>
         <div className="flex flex-col gap-2">
@@ -397,7 +391,7 @@ function TeamCommissionCard({ raw, onSaved }: { raw: string | undefined; onSaved
               <IconButton icon="trash" label="Hapus orang" tone="danger" onClick={() => setRows(rows.filter((_, j) => j !== i))} />
             </div>
           ))}
-          {!rows.length && <p className="text-[14px] text-muted">Belum ada anggota tim. Komisi tidak dihitung otomatis.</p>}
+          {!rows.length && <p className="text-[14px] text-muted">Belum ada anggota tim.</p>}
           <div className="mt-1 flex items-center justify-between">
             <Button icon="plus" onClick={() => setRows([...rows, { name: '', pct: '' }])}>
               Tambah orang
@@ -620,7 +614,6 @@ function ResetData() {
   return (
     <div className="mt-4 rounded-xl border border-line-soft p-4">
       <div className="font-medium text-ink">Reset data</div>
-      <p className="mt-1 text-[13.5px] text-ink-2">Mengosongkan portal untuk mulai input dari awal. Unduh cadangan dulu agar bisa dikembalikan lewat Impor data.</p>
       <label className="mt-3 flex items-start gap-3 text-[13.5px] text-ink-2">
         <input type="checkbox" className="mt-1 accent-[#1f2a44]" checked={keepSetup} onChange={(e) => setKeepSetup(e.target.checked)} />
         <span>Pertahankan pengaturan, toko, produk, dan pemetaan SKU</span>

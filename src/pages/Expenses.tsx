@@ -79,7 +79,7 @@ export default function Expenses() {
       {own && !isOwner && (
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-line-soft bg-white px-5 py-3.5">
           <span className="flex items-center gap-2 text-[14px] text-ink-2">
-            <Icon name="lock" size={16} className="text-gold" /> Gaji dan komisi tim disembunyikan. Hanya owner yang bisa melihat dan mencatatnya.
+            <Icon name="lock" size={16} className="text-gold" /> Gaji dan komisi disembunyikan
           </span>
           <OwnerUnlockButton
             onUnlocked={() => {
@@ -238,13 +238,11 @@ function TeamCommissionTable() {
       <Card
         padded={false}
         title="Komisi tim per bulan"
-        subtitle={`Dihitung otomatis mulai ${monthLabel(team.start, true)} · ${team.members.map((m) => `${m.name} ${Math.round(m.pct * 10000) / 100}%`).join(' · ')} dari pendapatan bersih`}
+        subtitle={team.members.map((m) => `${m.name} ${Math.round(m.pct * 10000) / 100}%`).join(' · ')}
       >
         {ignored > 0 && (
           <div className="px-5 pt-4">
-            <Callout tone="warning" title={`${ignored} catatan biaya "Komisi" sejak ${monthLabel(team.start, true)} tidak dihitung`}>
-              Komisi tim di bulan-bulan ini sudah dihitung otomatis dari pengaturan, jadi catatan manual diabaikan agar tidak dobel.
-            </Callout>
+            <Callout tone="warning" title={`${ignored} catatan biaya "Komisi" sejak ${monthLabel(team.start, true)} tidak dihitung`} />
           </div>
         )}
         {!rows.length ? (

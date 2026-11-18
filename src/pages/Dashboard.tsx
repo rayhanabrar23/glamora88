@@ -251,7 +251,7 @@ function StockPulse({ data }: { data: DashboardData }) {
   const months = data.period.activeMonths || 1
   const rows = data.stockByModel.filter((s) => s.onHand > 0 || s.soldNet > 0)
   return (
-    <Card title="Stok per model" subtitle="Terjual dibanding total yang pernah masuk" padded={false}>
+    <Card title="Stok per model" padded={false}>
       <Table
         head={
           <tr>

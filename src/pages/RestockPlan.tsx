@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { DEFAULT_RESTOCK, Z_OF, type RestockParams, type RestockResult, type RestockRow, type RestockStatus } from '../../shared/restock'
+import { DEFAULT_RESTOCK, type RestockParams, type RestockResult, type RestockRow, type RestockStatus } from '../../shared/restock'
 import { api, qs } from '../lib/api'
 import { dateLabel, int, rp } from '../lib/format'
 import { useData } from '../lib/useData'
@@ -23,7 +23,6 @@ export default function RestockPlan() {
   const [p, setP] = useState<RestockParams | null>(null)
   const [query, setQuery] = useState('')
   const [open, setOpen] = useState<Record<string, boolean>>({})
-  const [howTo, setHowTo] = useState(true)
   const { data, error, reload } = useData<Res>(`/restock${query}`)
   const toast = useToast()
   const navigate = useNavigate()
@@ -66,8 +65,6 @@ export default function RestockPlan() {
   const groups = new Map<string, RestockRow[]>()
   for (const r of rows) groups.set(r.product_code, [...(groups.get(r.product_code) ?? []), r])
   const worst = (rr: RestockRow[]) => ORDER.find((s) => rr.some((r) => r.status === s))!
-  const sample = [...rows].sort((a, b) => b.daily - a.daily)[0]
-  const z = Z_OF[String(p.service)]
   const num = (k: 'leadDays' | 'reviewDays' | 'windowDays' | 'deadDays' | 'safetyDays', min: number) => ({
     type: 'number' as const,
     min,
@@ -90,13 +87,13 @@ export default function RestockPlan() {
         }
       >
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-          <Field label="Lead time (hari)" hint="Dari bayar sampai barang tiba">
+          <Field label="Lead time (hari)" >
             <Input {...num('leadDays', 0)} />
           </Field>
-          <Field label="Jarak antar pesanan (hari)" hint="Seberapa sering restock">
+          <Field label="Jarak antar pesanan (hari)">
             <Input {...num('reviewDays', 1)} />
           </Field>
-          <Field label="Safety stock" hint={p.safetyMode === 'stat' ? 'Dari naik-turunnya penjualan harian' : 'Sekian hari penjualan'}>
+          <Field label="Safety stock" >
             <Select
               value={p.safetyMode}
               onChange={(e) => set({ safetyMode: e.target.value as RestockParams['safetyMode'] })}
@@ -107,7 +104,7 @@ export default function RestockPlan() {
             />
           </Field>
           {p.safetyMode === 'stat' ? (
-            <Field label="Tingkat layanan" hint="Peluang tidak kehabisan saat menunggu barang">
+            <Field label="Tingkat layanan" >
               <Select
                 value={String(p.service)}
                 onChange={(e) => set({ service: Number(e.target.value) as RestockParams['service'] })}
@@ -123,13 +120,13 @@ export default function RestockPlan() {
               <Input {...num('safetyDays', 0)} />
             </Field>
           )}
-          <Field label="Jendela data penjualan (hari)" hint="Hari terakhir yang dipakai untuk laju jual">
+          <Field label="Jendela data penjualan (hari)" >
             <Input {...num('windowDays', 7)} />
           </Field>
-          <Field label="Batas deadstock (hari)" hint="Tanpa penjualan selama ini = deadstock">
+          <Field label="Batas deadstock (hari)" >
             <Input {...num('deadDays', 7)} />
           </Field>
-          <Field label="Target penjualan (pcs/bulan)" hint={p.targetMonthly ? `${dec(data.factor)}× laju aktual, porsi per SKU mengikuti data` : 'Kosong = pakai laju jual aktual'}>
+          <Field label="Target penjualan (pcs/bulan)" hint={p.targetMonthly ? `${dec(data.factor)}× laju aktual, porsi per SKU mengikuti data` : undefined}>
             <Input type="number" min={0} placeholder={`${int(data.actualMonthly)}`} value={p.targetMonthly ?? ''} onChange={(e) => set({ targetMonthly: Number(e.target.value) > 0 ? Number(e.target.value) : null })} />
           </Field>
         </div>
@@ -252,59 +249,6 @@ export default function RestockPlan() {
               )
             })}
           </Table>
-        </Card>
-      </div>
-
-      <div className="mt-4">
-        <Card
-          title="Cara hitung"
-          actions={
-            <Button variant="ghost" onClick={() => setHowTo((v) => !v)}>
-              {howTo ? 'Tutup' : 'Buka'}
-            </Button>
-          }
-        >
-          {howTo && (
-            <div className="grid gap-3 text-[13.5px] leading-relaxed text-ink-2 md:grid-cols-2">
-              <div className="rounded-2xl bg-canvas/70 px-4 py-3">
-                <div className="font-semibold text-ink">1 · Lead time</div>
-                Jumlah hari dari bayar sampai barang siap dijual. Selama itu penjualan tetap jalan, jadi stok harus cukup untuk menutupnya: laju jual per hari × {int(p.leadDays)} hari.
-              </div>
-              <div className="rounded-2xl bg-canvas/70 px-4 py-3">
-                <div className="font-semibold text-ink">2 · Safety stock</div>
-                Stok cadangan untuk penjualan yang lebih ramai dari biasanya.{' '}
-                {p.safetyMode === 'stat' ? (
-                  <>
-                    Rumus: Z × simpangan baku penjualan harian × √lead time, dengan Z = {dec(z, 2)} untuk tingkat layanan {int(p.service * 100)}%.
-                  </>
-                ) : (
-                  <>Rumus: laju jual per hari × {int(p.safetyDays)} hari.</>
-                )}
-              </div>
-              <div className="rounded-2xl bg-canvas/70 px-4 py-3">
-                <div className="font-semibold text-ink">3 · Reorder point</div>
-                Batas stok untuk mulai memesan: (laju jual per hari × lead time) + safety stock. Bila sisa + barang dalam perjalanan sudah di bawah angka ini, statusnya "Pesan sekarang". Saran pesan mengisi
-                stok sampai cukup untuk lead time + {int(p.reviewDays)} hari berikutnya + safety stock.
-              </div>
-              <div className="rounded-2xl bg-canvas/70 px-4 py-3">
-                <div className="font-semibold text-ink">4 · Deadstock</div>
-                Stok yang masih ada tetapi tidak terjual lebih dari {int(p.deadDays)} hari, atau belum pernah laku. Modalnya tertahan; jangan direstock, pertimbangkan diskon atau bundling. "Lambat" berarti
-                masih laku tetapi stoknya cukup untuk lebih dari 6 bulan.
-              </div>
-              {sample && sample.daily > 0 && (
-                <div className="rounded-2xl bg-gold-soft px-4 py-3 md:col-span-2">
-                  <div className="font-semibold text-ink">
-                    Contoh: {sample.product_name} · {sample.color}
-                  </div>
-                  <span className="num">
-                    Laju jual {dec(sample.daily, 2)} pcs/hari · kebutuhan selama lead time {dec(sample.daily, 2)} × {int(p.leadDays)} = {int(Math.ceil(sample.daily * p.leadDays))} pcs · safety stock{' '}
-                    {p.safetyMode === 'stat' ? `${dec(z, 2)} × ${dec(sample.sigma, 2)} × √${int(p.leadDays)}` : `${dec(sample.daily, 2)} × ${int(p.safetyDays)}`} = {int(sample.safety)} pcs · reorder point = {int(sample.rop)} pcs.
-                    Sisa {int(sample.onHand)} pcs{sample.inTransit ? ` + ${int(sample.inTransit)} dalam perjalanan` : ''}, jadi {sample.orderQty ? `pesan ${int(sample.orderQty)} pcs` : 'belum perlu pesan'}.
-                  </span>
-                </div>
-              )}
-            </div>
-          )}
         </Card>
       </div>
     </>

@@ -37,7 +37,6 @@ export function OwnerGate({ title, children }: { title: string; children: ReactN
               <Icon name="lock" size={22} />
             </span>
             <div className="mt-3 text-[17px] font-semibold text-ink">Khusus owner</div>
-            <p className="mt-1 text-[13.5px] text-muted">Masukkan kata sandi owner untuk membuka halaman ini. Kunci terbuka 8 jam di perangkat ini.</p>
           </div>
           {!data.configured ? (
             <div className="mt-4">

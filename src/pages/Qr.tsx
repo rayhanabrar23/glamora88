@@ -21,7 +21,6 @@ export default function Qr() {
     <>
       <PageHeader
         title="QR & Gudang"
-        subtitle="Label QR per barang, scan barang masuk & keluar"
         actions={
           <Tabs
             value={view}
@@ -66,7 +65,6 @@ function Scan({ stock, onSaved }: { stock: StockRow[]; onSaved: () => void }) {
     return { expected: e, already: a }
   }, [pur, batchId])
   const kinds = MOVE_KINDS.filter((k) => k.direction === dir)
-  const k = moveKind(kind)!
 
   const add = (sku: string, n = 1) => setLines((ls) => (ls.some((l) => l.sku === sku) ? ls.map((l) => (l.sku === sku ? { ...l, qty: Math.max(0, l.qty + n) } : l)) : [{ sku, qty: n }, ...ls]))
   const scanner = useQrScanner((text) => {
@@ -132,11 +130,11 @@ function Scan({ stock, onSaved }: { stock: StockRow[]; onSaved: () => void }) {
                 </button>
               ))}
             </div>
-            <Field label="Jenis" hint={k.hint}>
+            <Field label="Jenis">
               <Select value={kind} onChange={(e) => setKind(e.target.value)} options={kinds.map((x) => ({ value: x.value, label: x.label }))} />
             </Field>
             {kind === 'penerimaan' ? (
-              <Field label="Batch yang diterima" hint={openBatches.length ? 'Hanya batch yang belum tercatat tiba' : 'Tidak ada batch yang sedang dalam perjalanan'}>
+              <Field label="Batch yang diterima" hint={openBatches.length ? undefined : 'Tidak ada batch yang sedang dalam perjalanan'}>
                 <Select value={batchId} onChange={(e) => setBatchId(e.target.value)} options={[{ value: '', label: 'Pilih batch…' }, ...openBatches.map((p) => ({ value: String(p.id), label: `${p.name} · ${dateLabel(p.order_date)}` }))]} />
               </Field>
             ) : (
@@ -166,7 +164,6 @@ function Scan({ stock, onSaved }: { stock: StockRow[]; onSaved: () => void }) {
             <video ref={scanner.videoRef} className="aspect-[4/3] w-full object-cover" muted playsInline />
             <div className="pointer-events-none absolute inset-[18%] rounded-2xl border-2 border-white/80" />
           </div>
-          {!scanner.active && <p className="text-[13.5px] text-muted">Arahkan kamera ke QR di label barang. Setiap barang yang terbaca menambah 1 pcs. Satu barang dibaca sekali, lalu ganti barang berikutnya.</p>}
           {scanner.error && (
             <div className="mt-3">
               <Callout tone="warning" title="Kamera tidak bisa dibuka">
@@ -287,13 +284,6 @@ function Scan({ stock, onSaved }: { stock: StockRow[]; onSaved: () => void }) {
             })}
           </Table>
         )}
-        <div className="border-t border-line-soft px-5 py-3 text-[12.5px] text-muted">
-          {kind === 'penerimaan'
-            ? '"Simpan sebagian": barang yang di-scan masuk stok, batch jadi "Tiba sebagian" dan bisa di-scan lagi saat sisanya datang. "Selesai & tutup batch": batch jadi "Tiba"; kekurangan atau kelebihan dicatat sebagai penyesuaian stok.'
-            : k.affectsStock
-              ? `Stok sistem ${dir === 'masuk' ? 'bertambah' : 'berkurang'} sesuai jumlah di atas.`
-              : 'Catatan saja: stok sistem tidak berubah karena sudah dihitung dari data penjualan.'}
-        </div>
       </Card>
     </div>
   )
@@ -333,10 +323,10 @@ function Labels({ stock }: { stock: StockRow[] }) {
     <div className="flex flex-col gap-4">
       <Card>
         <div className="flex flex-wrap items-start gap-3">
-          <Field label="Isi jumlah dari" hint="Atau ketik jumlah label per SKU di tabel" className="w-full sm:w-[260px]">
+          <Field label="Isi jumlah dari" className="w-full sm:w-[260px]">
             <Select value={batchId} onChange={(e) => fromBatch(e.target.value)} options={[{ value: '', label: 'Pilih batch impor…' }, ...(pur?.purchases ?? []).map((p) => ({ value: String(p.id), label: `${p.name} · ${p.status}` }))]} />
           </Field>
-          <Field label="Ukuran label" hint={size === 'a4' ? '40 label per lembar A4 (±48 × 28 mm)' : 'Printer thermal, 1 label per stiker'} className="w-full sm:w-[230px]">
+          <Field label="Ukuran label" className="w-full sm:w-[230px]">
             <Select
               value={size}
               onChange={(e) => setSize(e.target.value as 'thermal' | 'a4')}
@@ -372,7 +362,6 @@ function Labels({ stock }: { stock: StockRow[] }) {
       <Card
         padded={false}
         title="Jumlah label per SKU"
-        subtitle="Satu label untuk satu pcs barang. Isi QR = tautan ke halaman SKU di portal."
         actions={
           <div className="w-full sm:w-[220px]">
             <Input className="h-9" placeholder="Cari SKU / model / warna" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Cari SKU" />
@@ -540,7 +529,6 @@ export function QrSku() {
             </Card>
             <Card>
               <div className="mx-auto w-[150px] [&_svg]:h-auto [&_svg]:w-full" dangerouslySetInnerHTML={{ __html: svg ?? '' }} />
-              <p className="mt-2 text-center text-[12px] text-muted">QR barang ini</p>
             </Card>
           </div>
           <div className="mt-4">{moves ? <MovesTable rows={moves} bySku={bySku} compact /> : <Loading />}</div>

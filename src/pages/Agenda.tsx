@@ -53,7 +53,6 @@ export default function Agenda() {
     <>
       <PageHeader
         title="Agenda Tim"
-        subtitle="Kegiatan, jadwal, dan pengingat untuk semua orang"
         actions={
           <>
             <Tabs
@@ -153,7 +152,7 @@ function ListView({ items, showDone, onToggle, onEdit, onAdd }: { items: AgendaI
   return (
     <div className="flex flex-col gap-4">
       {overdue.length > 0 && (
-        <Card title={`Pengingat terlewat (${overdue.length})`} subtitle="Belum ditandai selesai">
+        <Card title={`Pengingat terlewat (${overdue.length})`}>
           <div className="-mx-3 flex flex-col">
             {overdue.map((o) => (
               <Row key={`${o.item.id}-${o.date}`} o={o} onToggle={onToggle} onEdit={onEdit} showDate />
@@ -338,7 +337,7 @@ function AgendaForm({ initial, people, onClose, onSaved }: { initial: Partial<Ag
         <Field label="Judul" className="sm:col-span-2">
           <Input autoFocus value={v.title ?? ''} onChange={(e) => set('title', e.target.value)} placeholder="Contoh: Live promo gajian, bayar batch 6, rapat bulanan" />
         </Field>
-        <Field label="Jenis" hint={v.kind === 'pengingat' ? 'Muncul di lonceng notifikasi sampai ditandai selesai' : 'Jadwal kegiatan tim'}>
+        <Field label="Jenis">
           <Select
             value={v.kind ?? 'kegiatan'}
             onChange={(e) => set('kind', e.target.value as AgendaItem['kind'])}
@@ -354,14 +353,14 @@ function AgendaForm({ initial, people, onClose, onSaved }: { initial: Partial<Ag
         <Field label="Tanggal">
           <Input type="date" value={v.start_date ?? ''} onChange={(e) => set('start_date', e.target.value)} />
         </Field>
-        <Field label="Jam" hint="Kosongkan bila sepanjang hari">
+        <Field label="Jam">
           <Input type="time" value={v.start_time ?? ''} onChange={(e) => set('start_time', e.target.value || null)} />
         </Field>
         <Field label="Untuk">
           <Select value={v.assignee ?? ''} onChange={(e) => set('assignee', e.target.value || null)} options={[{ value: '', label: 'Semua orang' }, ...people]} />
         </Field>
         {v.kind !== 'pengingat' && v.repeat === 'none' ? (
-          <Field label="Sampai tanggal" hint="Untuk kegiatan beberapa hari (opsional)">
+          <Field label="Sampai tanggal">
             <Input type="date" min={v.start_date} value={v.end_date ?? ''} onChange={(e) => set('end_date', e.target.value || null)} />
           </Field>
         ) : (
@@ -375,7 +374,7 @@ function AgendaForm({ initial, people, onClose, onSaved }: { initial: Partial<Ag
           />
         </Field>
         {v.repeat && v.repeat !== 'none' ? (
-          <Field label="Ulangi sampai" hint="Kosongkan bila terus berulang">
+          <Field label="Ulangi sampai">
             <Input type="date" min={v.start_date} value={v.repeat_until ?? ''} onChange={(e) => set('repeat_until', e.target.value || null)} />
           </Field>
         ) : (

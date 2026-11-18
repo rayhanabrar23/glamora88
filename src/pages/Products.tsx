@@ -286,8 +286,8 @@ function ProductForm({ initial, onClose, onSaved }: { initial: Partial<Product>;
       }
     >
       <div className="grid grid-cols-2 gap-4">
-        <Field label="Kode model" hint="Contoh: GL-14">
-          <Input value={v.code ?? ''} disabled={editing} onChange={(e) => setV({ ...v, code: e.target.value.toUpperCase() })} />
+        <Field label="Kode model">
+          <Input value={v.code ?? ''} disabled={editing} onChange={(e) => setV({ ...v, code: e.target.value.toUpperCase() })} placeholder="GL-14" />
         </Field>
         <Field label="Kategori">
           <Select value={v.category ?? 'Tas'} onChange={(e) => setV({ ...v, category: e.target.value })} options={[...PRODUCT_CATEGORIES]} />
@@ -345,8 +345,8 @@ function VariantForm({ initial, products, onClose, onSaved }: { initial: Partial
             options={products.map((p) => ({ value: p.code, label: `${p.code} · ${p.name}` }))}
           />
         </Field>
-        <Field label="Kode SKU" hint="Contoh: GL-01COCT08">
-          <Input value={v.sku ?? ''} disabled={editing} onChange={(e) => setV({ ...v, sku: e.target.value.toUpperCase() })} />
+        <Field label="Kode SKU">
+          <Input value={v.sku ?? ''} disabled={editing} onChange={(e) => setV({ ...v, sku: e.target.value.toUpperCase() })} placeholder="GL-01COCT08" />
         </Field>
         <Field label="Warna / varian">
           <Input value={v.color ?? ''} onChange={(e) => setV({ ...v, color: e.target.value })} />
@@ -542,10 +542,6 @@ function PriceList({ products, byProduct, open, setOpen, onEdit }: {
           )
         })}
       </Table>
-      <p className="border-t border-line-soft px-6 py-3 text-[12.5px] leading-relaxed text-muted">
-        Harga beli = harga barang di batch terakhir. Modal sampai gudang = rata-rata harga beli semua batch ditambah cargo dan biaya lain per pcs. Margin = harga jual − modal sampai gudang,
-        belum dikurangi potongan TikTok.
-      </p>
     </Card>
   )
 }
@@ -654,9 +650,6 @@ function CatalogImport({ products, variants, onClose, onSaved }: { products: Pro
       }
     >
       <div className="flex flex-col gap-4">
-        <p className="text-[13.5px] text-ink-2">
-          Pakai file <b>Produk_SKU_dan_Pengaturan.xlsx</b> (sheet Produk, Varian (SKU), dan Pemetaan SKU TikTok). Model & varian yang sudah ada diperbarui sesuai file; yang belum ada ditambahkan. Tidak ada data yang dihapus.
-        </p>
         <label className="inline-flex w-fit cursor-pointer items-center gap-2 rounded-full border border-line bg-white px-4 py-2 text-[14px] font-medium text-ink hover:border-gold">
           <Icon name="upload" size={16} /> {name || 'Pilih file .xlsx'}
           <input type="file" accept=".xlsx" className="hidden" onChange={(e) => e.target.files?.[0] && pick(e.target.files[0])} />

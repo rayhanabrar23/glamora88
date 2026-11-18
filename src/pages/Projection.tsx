@@ -183,7 +183,7 @@ export default function Projection() {
       </div>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-2">
-        <Card title="1 · Periode & dana awal" subtitle="Dana yang sudah di tangan saat proyeksi dimulai">
+        <Card title="1 · Periode & dana awal">
           <div className="grid grid-cols-2 gap-4">
             <Field label="Mulai bulan">
               <Input type="month" value={s.start} onChange={(e) => e.target.value && upd({ start: e.target.value })} />
@@ -308,7 +308,7 @@ export default function Projection() {
             </div>
           )}
           {s.restockMode === 'match' && (
-            <Field label="Biaya per pcs (Rp)" hint="Tiap bulan restock sebanyak yang terjual di bulan itu, sehingga stok awal tetap utuh">
+            <Field label="Biaya per pcs (Rp)">
               <Input type="number" min={0} value={s.restockCost ?? s.landedCost} onChange={(e) => upd({ restockCost: Number(e.target.value) })} />
             </Field>
           )}
@@ -319,7 +319,7 @@ export default function Projection() {
           )}
         </Card>
 
-        <Card title="4 · Biaya tetap bulanan" subtitle="Gaji, sewa, listrik, iklan rutin">
+        <Card title="4 · Biaya tetap bulanan">
           <Rows<CostItem>
             items={s.costs}
             onChange={(costs) => upd({ costs })}
@@ -337,7 +337,7 @@ export default function Projection() {
       <div className="mt-4 grid gap-4 lg:grid-cols-2">
         <Card
           title="5 · Kas lain di tengah periode"
-          subtitle="Opsional: pelunasan sewa, beli alat, tambahan modal susulan"
+         
           actions={
             <Button icon="plus" onClick={() => upd({ oneOffs: [...s.oneOffs, { id: uid(), name: 'Pengeluaran', month: s.start, amount: 0 }] })}>
               Tambah
@@ -380,7 +380,7 @@ export default function Projection() {
           </div>
         </Card>
 
-        <Card title="6 · Angka per pcs" subtitle="Terisi otomatis dari data; ubah bila perlu">
+        <Card title="6 · Angka per pcs">
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
             <Field label="Stok awal (pcs)" hint={`Data: ${int(base.openingStock)} pcs`}>
               <Input type="number" value={s.openingStock} onChange={(e) => upd({ openingStock: Number(e.target.value) })} />
@@ -455,10 +455,6 @@ export default function Projection() {
               </tr>
             ))}
           </Table>
-          <p className="border-t border-line-soft px-5 py-3 text-[12.5px] text-muted">
-            Arus kas = dana cair TikTok − komisi tim − biaya tetap − kas lain − restock. Laba operasional memakai HPP (stok lama yang terjual), sehingga bisa berbeda dari arus kas.
-            Belum termasuk gaji owner & pajak.
-          </p>
         </Card>
       </div>
     </>
@@ -489,10 +485,6 @@ function AutoFill({ months, volume, restockData, hasItems, onFill }: { months: s
   return (
     <div className="rounded-2xl bg-canvas/70 p-3.5">
       <div className="text-[13.5px] font-medium text-ink">Isi otomatis per SKU</div>
-      <p className="mt-0.5 text-[12.5px] text-muted">
-        Target pcs tiap bulan dibagi ke SKU sesuai porsi lakunya
-        {restockData ? ` (penjualan ${dateLabelShort(restockData.windowFrom)} – ${dateLabelShort(restockData.asOf)})` : ''}. SKU deadstock dan lambat tidak direstock. Hasilnya bisa diedit.
-      </p>
       <div className="mt-2.5 flex flex-wrap items-end gap-2">
         <label className="w-[170px]">
           <span className="mb-1 block text-[12px] text-muted">Stok pengaman (% bulan depan)</span>
@@ -509,7 +501,6 @@ function AutoFill({ months, volume, restockData, hasItems, onFill }: { months: s
     </div>
   )
 }
-const dateLabelShort = (d: string) => new Date(`${d}T00:00:00`).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })
 
 function RestockPlan({ items, months, stock, fallbackCost, onChange, volume, restockData }: { items: Restock[]; months: string[]; stock: StockRow[]; fallbackCost: number; onChange: (v: Restock[]) => void; volume: Record<string, number>; restockData: RestockResult | null }) {
   const skus = stock.filter((r) => r.tracked && r.category !== 'Kemasan')

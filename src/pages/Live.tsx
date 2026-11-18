@@ -318,12 +318,12 @@ function SessionForm({ initial, stores, hosts, onClose, onSaved }: { initial: Pa
         <Field label="Toko">
           <Select value={v.store ?? ''} onChange={(e) => set('store', e.target.value)} options={[{ value: '', label: 'Pilih…' }, ...stores]} />
         </Field>
-        <Field label="Jam jadwal" hint="Jam live seharusnya mulai">
+        <Field label="Jam jadwal">
           <Input type="time" value={v.scheduled_time ?? ''} onChange={(e) => set('scheduled_time', e.target.value || null)} />
         </Field>
         <Field
           label="Mulai live (sebenarnya)"
-          hint={late == null ? 'Tanggal & jam live dimulai' : late > 0 ? <span className="text-warn">Telat {late} menit dari jadwal</span> : <span className="text-good">Tepat waktu</span>}
+          hint={late == null ? undefined : late > 0 ? <span className="text-warn">Telat {late} menit dari jadwal</span> : <span className="text-good">Tepat waktu</span>}
         >
           <Input type="datetime-local" value={(v.start_at ?? '').slice(0, 16).replace(' ', 'T')} onChange={(e) => set('start_at', `${e.target.value.replace('T', ' ')}:00`)} />
         </Field>

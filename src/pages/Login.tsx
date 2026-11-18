@@ -60,7 +60,6 @@ export default function Login({ onSuccess }: { onSuccess: () => void }) {
             {busy ? 'Memeriksa…' : 'Masuk'}
           </Button>
         </form>
-        <p className="mt-6 text-center text-[12.5px] text-white/50">Hanya untuk tim internal Glamora88. Owner masuk dengan nama pengguna “owner”.</p>
       </div>
     </div>
   )

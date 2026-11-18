@@ -430,9 +430,6 @@ function Profile({ onClose, onPassword }: { onClose: () => void; onPassword: () 
           </div>
         )}
       </div>
-      <p className="mt-3 text-[12.5px] text-muted">
-        Foto dipotong persegi dan dikecilkan otomatis. Nama dan peran diatur owner di Pengaturan › Akun tim{user.id === -1 ? '' : ', karena dipakai untuk komisi dan KPI'}.
-      </p>
     </Modal>
   )
 }

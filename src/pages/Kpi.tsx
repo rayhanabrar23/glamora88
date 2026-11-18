@@ -45,7 +45,6 @@ function KpiBody() {
     <>
       <PageHeader
         title="KPI Staf"
-        subtitle="Skor bulanan, checklist, dan komisi akhir tiap staf"
         actions={
           <>
             <Tabs
@@ -119,7 +118,7 @@ function Rekap({ data, month, setMonth, reload }: { data: KpiResponse; month: st
     <>
       <Card>
         <div className="flex flex-wrap items-start gap-x-4 gap-y-3">
-          <Field label="Bulan" hint="Bulan yang dinilai" className="w-full sm:w-[190px]">
+          <Field label="Bulan" className="w-full sm:w-[190px]">
             <Input type="month" value={month} onChange={(e) => e.target.value && setMonth(e.target.value)} />
           </Field>
           <Field
@@ -197,7 +196,7 @@ function Rekap({ data, month, setMonth, reload }: { data: KpiResponse; month: st
       </div>
 
       <div className="mt-4 grid gap-4 xl:grid-cols-[1.4fr_1fr]">
-        <Card title="Pencapaian per KPI" subtitle="Garis = target 100%">
+        <Card title="Pencapaian per KPI">
           <div className="flex flex-col gap-5">
             {results.map((r) => (
               <div key={r.staff.id}>
@@ -259,7 +258,6 @@ function StaffSummary({ r, floor, cap }: { r: KpiStaffResult; floor: number; cap
           <dd className="num font-semibold text-navy">{r.baseCommission ? rp(r.finalCommission, { compact: true }) : '–'}</dd>
         </div>
       </dl>
-      {!r.baseCommission && <p className="mt-2 text-[12px] text-muted">Belum ada komisi dasar bulan ini (cek Pengaturan › Komisi tim, bulan mulai).</p>}
     </Card>
   )
 }
@@ -321,7 +319,6 @@ function Trend({ data, results }: { data: KpiResponse; results: KpiStaffResult[]
           </div>
         ))}
       </div>
-      <p className="mt-2 text-[12px] text-muted">Garis putus-putus = 100%. ✓ = sudah difinalisasi.</p>
     </Card>
   )
 }
@@ -511,16 +508,13 @@ function Atur({ data, reload }: { data: KpiResponse; reload: () => void }) {
         }
       >
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <Field label="Skor maksimal (%)" hint="Skor di atas ini dibatasi">
+          <Field label="Skor maksimal (%)">
             <Input type="number" min={100} value={Math.round(cfg.cap * 100)} onChange={(e) => set({ ...cfg, cap: Math.max(1, Number(e.target.value) / 100) })} />
           </Field>
-          <Field label="Batas minimal komisi (%)" hint="Di bawah skor ini komisi 0">
+          <Field label="Batas minimal komisi (%)">
             <Input type="number" min={0} max={100} value={Math.round(cfg.floor * 100)} onChange={(e) => set({ ...cfg, floor: Math.min(1, Math.max(0, Number(e.target.value) / 100)) })} />
           </Field>
         </div>
-        <p className="mt-3 text-[13px] text-ink-2">
-          Komisi akhir = komisi dasar × skor KPI. Skor {P(cfg.floor)}–100% mengurangi komisi sebanding; di atas 100% menambah sesuai bobot KPI yang dilampaui, paling tinggi {P(cfg.cap)}.
-        </p>
       </Card>
 
       {cfg.staff.map((s) => {
@@ -543,10 +537,10 @@ function Atur({ data, reload }: { data: KpiResponse; reload: () => void }) {
                 <Field label="Peran">
                   <Input value={s.role} onChange={(e) => setStaff(s.id, { role: e.target.value })} />
                 </Field>
-                <Field label="Nama di Komisi tim" hint="Pengaturan › Komisi tim per orang">
+                <Field label="Nama di Komisi tim">
                   <Select value={s.commissionMember} options={[{ value: '', label: 'Tanpa komisi' }, ...memberOpts]} onChange={(e) => setStaff(s.id, { commissionMember: e.target.value })} />
                 </Field>
-                <Field label="Nama host di Sesi Live" hint="Kosong = sama dengan nama">
+                <Field label="Nama host di Sesi Live">
                   <Input value={s.hostName ?? ''} onChange={(e) => setStaff(s.id, { hostName: e.target.value || undefined })} />
                 </Field>
               </div>
@@ -607,10 +601,10 @@ function Atur({ data, reload }: { data: KpiResponse; reload: () => void }) {
                           />
                         )}
                       </Field>
-                      <Field label="Bobot %" hint="dari skor" className="col-span-2 lg:col-span-1">
+                      <Field label="Bobot %" className="col-span-2 lg:col-span-1">
                         <Input className="h-9 text-right" type="number" min={0} value={k.weight} onChange={(e) => setKpi(s.id, k.id, { weight: Math.max(0, Number(e.target.value)) })} />
                       </Field>
-                      <Field label="Maks capai %" hint="batas lampaui" className="col-span-2 lg:col-span-2">
+                      <Field label="Maks capai %" className="col-span-2 lg:col-span-2">
                         <Input className="h-9 text-right" type="number" min={100} value={Math.round(k.maxAchieve * 100)} onChange={(e) => setKpi(s.id, k.id, { maxAchieve: Math.max(1, Number(e.target.value) / 100) })} />
                       </Field>
                     </div>
@@ -619,13 +613,11 @@ function Atur({ data, reload }: { data: KpiResponse; reload: () => void }) {
                         <Textarea rows={Math.max(2, (k.items ?? []).length)} value={(k.items ?? []).join('\n')} onChange={(e) => setKpi(s.id, k.id, { items: e.target.value.split('\n') })} onBlur={(e) => setKpi(s.id, k.id, { items: e.target.value.split('\n').map((x) => x.trim()).filter(Boolean) })} />
                       </Field>
                     )}
-                    {k.type === 'manual' && <p className="mt-1.5 text-[12px] text-muted">Owner mengisi realisasi tiap bulan. Pencapaian = realisasi ÷ target.</p>}
                     {k.type === 'auto' && k.metric === 'live_ontime' && (
                       <div className="mt-2 flex flex-wrap items-end gap-3">
                         <Field label="Toleransi telat (menit)" className="w-[170px]">
                           <Input className="h-9 text-right" type="number" min={0} value={k.toleranceMin ?? 10} onChange={(e) => setKpi(s.id, k.id, { toleranceMin: Math.max(0, Number(e.target.value)) })} />
                         </Field>
-                        <p className="pb-2 text-[12px] text-muted">Dari Sesi Live: jam mulai dibanding jam jadwal. Sesi tanpa jam jadwal tidak dihitung.</p>
                       </div>
                     )}
                   </div>
