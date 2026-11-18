@@ -48,11 +48,14 @@ app.post('/login', async (c) => {
   }
   if (uid == null) return c.json({ error: 'Nama pengguna atau kata sandi salah' }, 401)
   c.header('Set-Cookie', await makeSessionCookie(c.env, uid))
+  // kunci owner dari pengguna sebelumnya di browser ini tidak ikut terbawa
+  c.header('Set-Cookie', clearOwnerCookie(), { append: true })
   return c.json({ ok: true })
 })
 
 app.post('/logout', (c) => {
   c.header('Set-Cookie', clearSessionCookie())
+  c.header('Set-Cookie', clearOwnerCookie(), { append: true })
   return c.json({ ok: true })
 })
 
@@ -181,7 +184,7 @@ const ownerOnly = (path: string, method: string) =>
   (path.startsWith('/api/stores') && method !== 'GET')
 // owner dianggap sudah membuka kunci bila masuk dengan akun "owner" atau sudah memasukkan kata sandi owner
 const ownerOk = async (c: { req: { header: (k: string) => string | undefined }; env: Env; get: (k: 'user') => SessionUser }) =>
-  c.get('user')?.id === -1 || (await isOwner(c.req.header('Cookie'), c.env))
+  c.get('user')?.id === -1 || (await isOwner(c.req.header('Cookie'), c.env, c.get('user')?.id ?? -99))
 app.use('*', async (c, next) => {
   if (ownerOnly(c.req.path, c.req.method) && !(await ownerOk(c))) {
     return c.json({ error: c.env.OWNER_PASSWORD ? 'Bagian ini hanya untuk owner. Buka kunci dengan kata sandi owner.' : 'OWNER_PASSWORD belum diatur di Cloudflare.' }, 403)
@@ -193,7 +196,7 @@ app.post('/owner/login', async (c) => {
   if (!c.env.OWNER_PASSWORD) return c.json({ error: 'OWNER_PASSWORD belum diatur di Cloudflare.' }, 503)
   const body = await c.req.json<{ password?: string }>().catch(() => ({ password: '' }))
   if (!checkOwnerPassword(body.password ?? '', c.env)) return c.json({ error: 'Kata sandi owner salah' }, 403)
-  c.header('Set-Cookie', await makeOwnerCookie(c.env))
+  c.header('Set-Cookie', await makeOwnerCookie(c.env, c.get('user').id))
   return c.json({ ok: true })
 })
 app.post('/owner/logout', (c) => {

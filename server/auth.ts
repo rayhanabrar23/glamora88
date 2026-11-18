@@ -86,21 +86,23 @@ const OWNER_MAX_AGE = 60 * 60 * 8
 type OwnerEnv = { APP_PASSWORD?: string; SESSION_SECRET?: string; OWNER_PASSWORD?: string }
 const ownerSecret = (env: OwnerEnv) => `${secretOf(env)}:owner:${env.OWNER_PASSWORD ?? ''}`
 
-export async function makeOwnerCookie(env: OwnerEnv) {
+/** Kunci owner terikat ke akun yang sedang login (uid), jadi tidak terbawa ke orang lain di browser yang sama. */
+export async function makeOwnerCookie(env: OwnerEnv, uid: number) {
   const exp = Math.floor(Date.now() / 1000) + OWNER_MAX_AGE
-  const sig = await hmac(ownerSecret(env), `owner.${exp}`)
-  return `${OWNER_COOKIE}=${exp}.${sig}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${OWNER_MAX_AGE}`
+  const sig = await hmac(ownerSecret(env), `owner.${exp}.${uid}`)
+  return `${OWNER_COOKIE}=${exp}.${uid}.${sig}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${OWNER_MAX_AGE}`
 }
 export function clearOwnerCookie() {
   return `${OWNER_COOKIE}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`
 }
-export async function isOwner(cookieHeader: string | null | undefined, env: OwnerEnv): Promise<boolean> {
+export async function isOwner(cookieHeader: string | null | undefined, env: OwnerEnv, uid: number): Promise<boolean> {
   if (!env.OWNER_PASSWORD || !cookieHeader) return false
   const m = cookieHeader.match(new RegExp(`(?:^|;\\s*)${OWNER_COOKIE}=([^;]+)`))
   if (!m) return false
-  const [exp, sig] = m[1].split('.')
-  if (!exp || !sig || Number(exp) < Date.now() / 1000) return false
-  return timingSafeEqual(sig, await hmac(ownerSecret(env), `owner.${exp}`))
+  const [exp, cuid, sig] = m[1].split('.')
+  // format lama tanpa uid tidak berlaku lagi
+  if (!exp || !sig || Number(exp) < Date.now() / 1000 || Number(cuid) !== uid) return false
+  return timingSafeEqual(sig, await hmac(ownerSecret(env), `owner.${exp}.${uid}`))
 }
 export function checkOwnerPassword(input: string, env: OwnerEnv) {
   return !!env.OWNER_PASSWORD && timingSafeEqual(input, env.OWNER_PASSWORD)
