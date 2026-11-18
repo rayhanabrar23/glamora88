@@ -21,9 +21,22 @@ const NAV = [
   { to: '/biaya', label: 'Biaya Operasional', icon: 'expense' },
   { to: '/proyeksi', label: 'Proyeksi Kas', icon: 'up' },
   { to: '/laporan', label: 'Unduh Laporan', icon: 'download' },
-  { to: '/kpi', label: 'KPI Staf', icon: 'kpi' },
-  { to: '/pengaturan', label: 'Pengaturan', icon: 'settings' },
+  { to: '/kpi', label: 'KPI Staf', icon: 'kpi', owner: true },
+  { to: '/pengaturan', label: 'Pengaturan', icon: 'settings', owner: true },
 ]
+
+/** Menu khusus owner (KPI, Pengaturan) disembunyikan dari staf; muncul untuk owner atau setelah kunci owner dibuka. */
+function useNav() {
+  const { user } = useMe()
+  const { data, reload } = useData<{ owner: boolean }>('/owner')
+  useEffect(() => {
+    const h = () => reload()
+    window.addEventListener('g88:owner', h)
+    return () => window.removeEventListener('g88:owner', h)
+  }, [reload])
+  const isOwner = !user || user.id <= 0 || user.role === 'Owner' || !!data?.owner
+  return NAV.filter((n) => !n.owner || isOwner)
+}
 
 function useClickOutside(onClose: () => void) {
   const ref = useRef<HTMLDivElement>(null)
@@ -55,11 +68,12 @@ function Brand() {
 }
 
 function Rail({ onLogout }: { onLogout: () => void }) {
+  const nav = useNav()
   const tip =
     'pointer-events-none absolute left-full z-50 ml-3 translate-x-[-4px] rounded-lg bg-white px-2.5 py-1.5 text-[12.5px] font-semibold whitespace-nowrap text-navy opacity-0 shadow-[0_10px_24px_-8px_rgba(0,0,0,0.6)] transition-all duration-150 group-hover:translate-x-0 group-hover:opacity-100 group-focus-visible:opacity-100'
   return (
     <aside className="rail fixed top-1/2 left-5 z-40 hidden -translate-y-1/2 flex-col items-center gap-1 rounded-[26px] p-2.5 lg:flex">
-      {NAV.map((n) => (
+      {nav.map((n) => (
         <NavLink
           key={n.to}
           to={n.to}
@@ -96,7 +110,8 @@ function QuickSearch() {
   const input = useRef<HTMLInputElement>(null)
   const navigate = useNavigate()
   const ref = useClickOutside(() => setOpen(false))
-  const hits = useMemo(() => NAV.filter((n) => n.label.toLowerCase().includes(q.trim().toLowerCase())), [q])
+  const nav = useNav()
+  const hits = useMemo(() => nav.filter((n) => n.label.toLowerCase().includes(q.trim().toLowerCase())), [q, nav])
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
@@ -371,6 +386,7 @@ function ChangePassword({ onClose }: { onClose: () => void }) {
 }
 
 export function Layout({ children, onLogout }: { children: ReactNode; onLogout: () => void }) {
+  const nav = useNav()
   const [open, setOpen] = useState(false)
   const { pathname } = useLocation()
   const today = new Date().toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
@@ -401,7 +417,7 @@ export function Layout({ children, onLogout }: { children: ReactNode; onLogout: 
           <div className="drawer pop-in m-3 flex h-[calc(100%-1.5rem)] w-[270px] origin-left flex-col rounded-[26px] p-3" onClick={(e) => e.stopPropagation()}>
             <div className="px-3 pt-2 pb-3 text-[13px] font-semibold tracking-[0.14em] text-white/70 uppercase">Menu</div>
             <nav className="flex flex-col gap-1 overflow-y-auto">
-              {NAV.map((n) => (
+              {nav.map((n) => (
                 <NavLink
                   key={n.to}
                   to={n.to}

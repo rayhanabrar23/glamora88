@@ -20,6 +20,7 @@ export function OwnerGate({ title, children }: { title: string; children: ReactN
       await api.post('/owner/login', { password: pw })
       setPw('')
       reload()
+      window.dispatchEvent(new Event('g88:owner'))
     } catch (x) {
       setErr((x as Error).message)
     } finally {
@@ -74,6 +75,7 @@ export function OwnerUnlockButton({ onUnlocked, label = 'Buka sebagai owner' }: 
       setOpen(false)
       setPw('')
       onUnlocked()
+      window.dispatchEvent(new Event('g88:owner'))
     } catch (x) {
       setErr((x as Error).message)
     }

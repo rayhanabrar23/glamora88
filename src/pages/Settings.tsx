@@ -55,6 +55,9 @@ function SettingsBody() {
         <AuditLog />
       </div>
       <div className="mt-4">
+        <Backups />
+      </div>
+      <div className="mt-4">
         <DataTools />
       </div>
     </>
@@ -191,6 +194,104 @@ function Accounts() {
             </Field>
           </div>
         </Modal>
+      )}
+    </Card>
+  )
+}
+
+// ---------- Cadangan otomatis ----------
+type BackupRow = { id: number; created_at: string; kind: string; created_by: string | null; size_bytes: number; counts: string | null }
+function Backups() {
+  const { data, reload } = useData<BackupRow[]>('/data/backups')
+  const [busy, setBusy] = useState(false)
+  const toast = useToast()
+  const when = (s: string) => new Date(`${s.replace(' ', 'T')}Z`).toLocaleString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+  const sizeLabel = (b: number) => (b >= 1e6 ? `${(b / 1e6).toLocaleString('id-ID', { maximumFractionDigits: 1 })} MB` : `${Math.max(1, Math.round(b / 1e3))} KB`)
+  const countsOf = (r: BackupRow) => {
+    try {
+      const c = JSON.parse(r.counts ?? '{}') as Record<string, number>
+      return `${int(c.sales ?? 0)} baris penjualan · ${int(c.variants ?? 0)} varian · ${int(c.purchases ?? 0)} batch`
+    } catch {
+      return ''
+    }
+  }
+  async function create() {
+    setBusy(true)
+    try {
+      await api.post('/data/backups')
+      toast('Cadangan dibuat')
+      reload()
+    } catch (e) {
+      toast((e as Error).message, 'bad')
+    } finally {
+      setBusy(false)
+    }
+  }
+  async function restore(r: BackupRow) {
+    const typed = window.prompt(
+      `Pulihkan data ke kondisi ${when(r.created_at)}?\n\nSemua data sekarang diganti isi cadangan ini. Kondisi sekarang otomatis dicadangkan dulu, jadi masih bisa dikembalikan.\n\nKetik PULIHKAN untuk melanjutkan:`,
+    )
+    if (typed === null) return
+    if (typed.trim() !== 'PULIHKAN') return toast('Dibatalkan: ketik PULIHKAN dengan huruf besar', 'bad')
+    setBusy(true)
+    try {
+      await api.post(`/data/backups/${r.id}/restore`, { confirm: 'PULIHKAN' })
+      toast('Data dipulihkan')
+      setTimeout(() => window.location.reload(), 600)
+    } catch (e) {
+      toast((e as Error).message, 'bad')
+      setBusy(false)
+    }
+  }
+  return (
+    <Card
+      title="Cadangan otomatis"
+      subtitle="Dibuat tiap malam pukul 00.00 WIB dan sebelum reset, impor, atau pemulihan. 40 cadangan terakhir disimpan."
+      padded={false}
+      actions={
+        <Button icon="download" onClick={create} disabled={busy}>
+          Buat cadangan sekarang
+        </Button>
+      }
+    >
+      {!data ? (
+        <p className="px-5 py-4 text-[14px] text-muted">Memuat…</p>
+      ) : !data.length ? (
+        <p className="px-5 py-4 text-[14px] text-muted">Belum ada cadangan. Cadangan pertama dibuat malam ini, atau klik “Buat cadangan sekarang”.</p>
+      ) : (
+        <div className="max-h-[360px] overflow-y-auto">
+          <Table
+            head={
+              <tr>
+                <th className={th}>Waktu</th>
+                <th className={th}>Jenis</th>
+                <th className={th}>Isi</th>
+                <th className={th}></th>
+              </tr>
+            }
+          >
+            {data.map((r) => (
+              <tr key={r.id}>
+                <td className={`${td} whitespace-nowrap text-ink`}>{when(r.created_at)}</td>
+                <td className={td}>
+                  <div className="capitalize text-ink">{r.kind}</div>
+                  <div className="text-[12px] text-muted">{r.created_by ?? ''}</div>
+                </td>
+                <td className={`${td} text-[13px] text-ink-2`}>
+                  {countsOf(r)} <span className="text-muted">· {sizeLabel(r.size_bytes)}</span>
+                </td>
+                <td className={`${td} whitespace-nowrap text-right`}>
+                  <a href={`/api/data/backups/${r.id}`} className="mr-1 inline-flex h-8 items-center rounded-full border border-line bg-white px-3 text-[13px] font-medium text-ink hover:border-gold">
+                    Unduh
+                  </a>
+                  <Button className="h-8 px-3 text-[13px]" onClick={() => restore(r)} disabled={busy}>
+                    Pulihkan
+                  </Button>
+                </td>
+              </tr>
+            ))}
+          </Table>
+        </div>
       )}
     </Card>
   )

@@ -187,7 +187,12 @@ export function computeStock(b: DataBundle): StockRow[] {
   for (const it of b.purchaseItems) {
     const r = ensure(it.sku)
     if (status.get(it.purchase_id) === 'Tiba') r.arrived += it.qty
-    else r.inTransit += it.qty
+    else {
+      // batch yang datang bertahap: yang sudah di-scan masuk gudang, sisanya masih di perjalanan
+      const got = Math.max(0, n(it.received_qty))
+      r.arrived += got
+      r.inTransit += Math.max(0, it.qty - got)
+    }
   }
   for (const s of b.sales) {
     if (!s.sku) continue

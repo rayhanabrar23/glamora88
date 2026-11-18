@@ -15,6 +15,8 @@ export async function ensureSchema(db: D1Database) {
   // kolom tambahan untuk tabel lama
   const liveCols = await db.prepare('PRAGMA table_info(live_sessions)').all<{ name: string }>()
   if (!liveCols.results.some((c) => c.name === 'scheduled_time')) await db.prepare('ALTER TABLE live_sessions ADD COLUMN scheduled_time TEXT').run()
+  const itemCols = await db.prepare('PRAGMA table_info(purchase_items)').all<{ name: string }>()
+  if (!itemCols.results.some((c) => c.name === 'received_qty')) await db.prepare('ALTER TABLE purchase_items ADD COLUMN received_qty INTEGER NOT NULL DEFAULT 0').run()
   const existing = await db.prepare('SELECT key FROM settings').all<{ key: string }>()
   const have = new Set(existing.results.map((r) => r.key))
   const missing = Object.entries(DEFAULT_SETTINGS).filter(([k]) => !have.has(k))

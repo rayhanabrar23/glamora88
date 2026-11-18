@@ -30,6 +30,7 @@ import {
 } from '../components/ui'
 import { Icon } from '../components/Icon'
 import RestockPlan from './RestockPlan'
+import { readCatalogFile, type CatalogFile } from '../lib/catalogImport'
 
 export default function Products() {
   const refs = useRefs()
@@ -38,6 +39,7 @@ export default function Products() {
   const [prodForm, setProdForm] = useState<Partial<Product> | null>(null)
   const [varForm, setVarForm] = useState<Partial<Variant> | null>(null)
   const [opname, setOpname] = useState(false)
+  const [importing, setImporting] = useState(false)
   const [view, setView] = useState<'stok' | 'harga' | 'restock'>('stok')
   const [priceFor, setPriceFor] = useState<{ title: string; skus: string[] } | null>(null)
   const toast = useToast()
@@ -81,6 +83,9 @@ export default function Products() {
         title="Produk & Stok"
         actions={
           <>
+            <Button icon="upload" onClick={() => setImporting(true)}>
+              Impor dari Excel
+            </Button>
             <Button icon="stock" onClick={() => setOpname(true)}>
               Stock opname
             </Button>
@@ -236,6 +241,18 @@ export default function Products() {
         />
       )}
       {opname && <OpnameForm rows={tracked} label={refs.variantLabel} onClose={() => setOpname(false)} onSaved={stock.reload} />}
+      {importing && (
+        <CatalogImport
+          products={refs.products}
+          variants={refs.variants}
+          onClose={() => setImporting(false)}
+          onSaved={() => {
+            refs.reload()
+            stock.reload()
+            window.dispatchEvent(new Event('g88:refresh'))
+          }}
+        />
+      )}
     </>
   )
 }
@@ -568,6 +585,150 @@ function PriceForm({ title, variants, suggested, onClose, onSaved }: { title: st
       <Field label="Harga jual katalog (Rp)" hint={variants.length > 1 ? `Berlaku untuk ${variants.length} warna sekaligus. Untuk harga yang berbeda per warna, buka produknya lalu klik pensil di baris warna. Kosongkan untuk memakai rata-rata penjualan.` : 'Hanya untuk warna ini. Kosongkan untuk memakai rata-rata penjualan.'}>
         <Input type="number" min={0} autoFocus value={price} onChange={(e) => setPrice(e.target.value === '' ? '' : Number(e.target.value))} />
       </Field>
+    </Modal>
+  )
+}
+
+// ---------- Impor katalog dari Excel ----------
+function CatalogImport({ products, variants, onClose, onSaved }: { products: Product[]; variants: Variant[]; onClose: () => void; onSaved: () => void }) {
+  const [file, setFile] = useState<CatalogFile | null>(null)
+  const [name, setName] = useState('')
+  const [err, setErr] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [withMap, setWithMap] = useState(true)
+  const toast = useToast()
+  async function pick(f: File) {
+    setErr('')
+    setFile(null)
+    setName(f.name)
+    try {
+      const c = await readCatalogFile(f)
+      if (!c.products.length && !c.variants.length && !c.skuMap.length) throw new Error('Tidak ada sheet Produk, Varian (SKU), atau Pemetaan SKU TikTok yang dikenali di file ini.')
+      setFile(c)
+    } catch (e) {
+      setErr((e as Error).message)
+    }
+  }
+  const prodCodes = new Set([...products.map((p) => p.code), ...(file?.products ?? []).map((p) => p.code)])
+  const skuSet = new Set([...variants.map((v) => v.sku), ...(file?.variants ?? []).map((v) => v.sku)])
+  const orphanVariants = (file?.variants ?? []).filter((v) => !prodCodes.has(v.product_code))
+  const orphanMaps = (file?.skuMap ?? []).filter((m) => !skuSet.has(m.sku))
+  const count = <T,>(rows: T[], key: (r: T) => string, existing: Set<string>) => {
+    const fresh = rows.filter((r) => !existing.has(key(r))).length
+    return { fresh, update: rows.length - fresh }
+  }
+  const pc = file ? count(file.products, (p) => p.code, new Set(products.map((p) => p.code))) : null
+  const vc = file ? count(file.variants, (v) => v.sku, new Set(variants.map((v) => v.sku))) : null
+  const blocked = orphanVariants.length > 0 || (withMap && orphanMaps.length > 0)
+  async function save() {
+    if (!file) return
+    setBusy(true)
+    try {
+      const r = await api.post<{ products: number; variants: number; skuMap: number }>('/catalog/import', {
+        products: file.products,
+        variants: file.variants,
+        skuMap: withMap ? file.skuMap : [],
+      })
+      toast(`Impor selesai: ${r.products} model, ${r.variants} varian, ${r.skuMap} pemetaan`)
+      onSaved()
+      onClose()
+    } catch (e) {
+      toast((e as Error).message, 'bad')
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <Modal
+      open
+      wide
+      title="Impor produk & varian dari Excel"
+      onClose={onClose}
+      footer={
+        <>
+          <Button onClick={onClose}>Batal</Button>
+          <Button variant="primary" onClick={save} disabled={!file || busy || blocked}>
+            {busy ? 'Mengimpor…' : 'Impor'}
+          </Button>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-4">
+        <p className="text-[13.5px] text-ink-2">
+          Pakai file <b>Produk_SKU_dan_Pengaturan.xlsx</b> (sheet Produk, Varian (SKU), dan Pemetaan SKU TikTok). Model & varian yang sudah ada diperbarui sesuai file; yang belum ada ditambahkan. Tidak ada data yang dihapus.
+        </p>
+        <label className="inline-flex w-fit cursor-pointer items-center gap-2 rounded-full border border-line bg-white px-4 py-2 text-[14px] font-medium text-ink hover:border-gold">
+          <Icon name="upload" size={16} /> {name || 'Pilih file .xlsx'}
+          <input type="file" accept=".xlsx" className="hidden" onChange={(e) => e.target.files?.[0] && pick(e.target.files[0])} />
+        </label>
+        {err && <Callout tone="critical" title="File tidak bisa dibaca">{err}</Callout>}
+        {file && pc && vc && (
+          <>
+            <div className="grid gap-3 sm:grid-cols-3">
+              {[
+                ['Model', file.products.length, `${pc.fresh} baru · ${pc.update} diperbarui`, file.sheets.products],
+                ['Varian (SKU)', file.variants.length, `${vc.fresh} baru · ${vc.update} diperbarui`, file.sheets.variants],
+                ['Pemetaan SKU TikTok', file.skuMap.length, withMap ? 'ikut diimpor' : 'tidak diimpor', file.sheets.skuMap],
+              ].map(([k, n, sub, sheet]) => (
+                <div key={String(k)} className="rounded-xl border border-line-soft bg-canvas/60 px-4 py-3">
+                  <div className="text-[12.5px] text-muted">{k}</div>
+                  <div className="num text-[22px] font-semibold text-ink">{int(Number(n))}</div>
+                  <div className="text-[12px] text-ink-2">{sub}</div>
+                  <div className="text-[11.5px] text-muted">{sheet ? `sheet "${sheet}"` : 'sheet tidak ditemukan'}</div>
+                </div>
+              ))}
+            </div>
+            {file.skuMap.length > 0 && (
+              <label className="flex items-center gap-2 text-[13.5px] text-ink-2">
+                <input type="checkbox" className="accent-[#1f2a44]" checked={withMap} onChange={(e) => setWithMap(e.target.checked)} />
+                Impor juga pemetaan SKU TikTok (penjualan yang sudah ada ikut dipetakan ulang)
+              </label>
+            )}
+            {orphanVariants.length > 0 && (
+              <Callout tone="critical" title={`${orphanVariants.length} varian belum punya model`}>
+                {orphanVariants.slice(0, 6).map((v) => `${v.sku} (model ${v.product_code || '-'})`).join(', ')}. Tambahkan modelnya di sheet Produk, lalu pilih file lagi.
+              </Callout>
+            )}
+            {withMap && orphanMaps.length > 0 && (
+              <Callout tone="critical" title={`${orphanMaps.length} pemetaan memakai SKU yang tidak ada`}>
+                {[...new Set(orphanMaps.map((m) => m.sku))].slice(0, 6).join(', ')}. Betulkan SKU-nya di file, atau hilangkan centang impor pemetaan.
+              </Callout>
+            )}
+            {file.warnings.length > 0 && (
+              <Callout tone="warning" title={`${file.warnings.length} catatan`}>
+                <ul className="list-disc pl-5">
+                  {file.warnings.slice(0, 8).map((w) => (
+                    <li key={w}>{w}</li>
+                  ))}
+                </ul>
+              </Callout>
+            )}
+            <div className="max-h-[260px] overflow-y-auto rounded-xl border border-line-soft">
+              <Table
+                head={
+                  <tr>
+                    <th className={th}>SKU</th>
+                    <th className={th}>Model</th>
+                    <th className={th}>Warna</th>
+                    <th className={`${th} text-right`}>Harga</th>
+                    <th className={th}>Aktif</th>
+                  </tr>
+                }
+              >
+                {file.variants.map((v) => (
+                  <tr key={v.sku}>
+                    <td className={`${td} whitespace-nowrap font-medium text-ink`}>{v.sku}</td>
+                    <td className={td}>{v.product_code}</td>
+                    <td className={td}>{v.color}</td>
+                    <td className={tdNum}>{v.price ? rp(v.price) : '–'}</td>
+                    <td className={td}>{v.active ? 'Ya' : 'Tidak'}</td>
+                  </tr>
+                ))}
+              </Table>
+            </div>
+          </>
+        )}
+      </div>
     </Modal>
   )
 }

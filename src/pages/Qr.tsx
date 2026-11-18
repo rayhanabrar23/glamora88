@@ -55,10 +55,15 @@ function Scan({ stock, onSaved }: { stock: StockRow[]; onSaved: () => void }) {
   const toast = useToast()
   const { data: pur } = useData<{ purchases: Purchase[]; items: PurchaseItem[] }>('/purchases')
   const openBatches = (pur?.purchases ?? []).filter((p) => p.status !== 'Tiba')
-  const expected = useMemo(() => {
-    const m = new Map<string, number>()
-    for (const it of pur?.items ?? []) if (String(it.purchase_id) === batchId) m.set(it.sku, (m.get(it.sku) ?? 0) + it.qty)
-    return m
+  const { expected, already } = useMemo(() => {
+    const e = new Map<string, number>()
+    const a = new Map<string, number>()
+    for (const it of pur?.items ?? [])
+      if (String(it.purchase_id) === batchId) {
+        e.set(it.sku, (e.get(it.sku) ?? 0) + it.qty)
+        a.set(it.sku, (a.get(it.sku) ?? 0) + (it.received_qty ?? 0))
+      }
+    return { expected: e, already: a }
   }, [pur, batchId])
   const kinds = MOVE_KINDS.filter((k) => k.direction === dir)
   const k = moveKind(kind)!
@@ -81,14 +86,18 @@ function Scan({ stock, onSaved }: { stock: StockRow[]; onSaved: () => void }) {
     setKind(MOVE_KINDS.find((x) => x.direction === d)!.value)
     setBatchId('')
   }
-  async function save() {
+  const remainingAfter = [...expected.entries()].reduce((a, [sku, q]) => a + Math.max(0, q - (already.get(sku) ?? 0) - (lines.find((l) => l.sku === sku)?.qty ?? 0)), 0)
+  async function save(close = false) {
+    if (kind === 'penerimaan' && close && remainingAfter > 0 && !window.confirm(`Masih ada ${remainingAfter} pcs yang belum diterima. Tutup batch sekarang? Kekurangannya dicatat sebagai selisih dan tidak ditunggu lagi.`)) return
     setBusy(true)
     try {
       if (kind === 'penerimaan') {
         if (!batchId) throw new Error('Pilih batch yang diterima')
-        const r = await api.post<{ diffs: { sku: string; diff: number }[] }>('/stock/receive', { purchase_id: Number(batchId), date, items: lines })
-        toast(r.diffs.length ? `Batch diterima, ${r.diffs.length} SKU selisih dicatat` : 'Batch diterima, jumlah sesuai')
-        setBatchId('')
+        const r = await api.post<{ diffs: { sku: string; diff: number }[]; remaining: number; closed: boolean }>('/stock/receive', { purchase_id: Number(batchId), date, items: lines, close })
+        if (r.closed) {
+          toast(r.diffs.length ? `Batch ditutup, ${r.diffs.length} SKU selisih dicatat` : 'Batch ditutup, jumlah sesuai')
+          setBatchId('')
+        } else toast(`Tersimpan. Masih ${int(r.remaining)} pcs belum datang`)
       } else {
         const r = await api.post<{ count: number }>('/stock/moves', { date, kind, note, items: lines.filter((l) => l.qty > 0) })
         toast(`${int(r.count)} pcs ${dir === 'masuk' ? 'masuk' : 'keluar'} tercatat`)
@@ -194,9 +203,20 @@ function Scan({ stock, onSaved }: { stock: StockRow[]; onSaved: () => void }) {
         subtitle={`${int(total)} pcs · ${lines.filter((l) => l.qty > 0).length} SKU`}
         padded={false}
         actions={
-          <Button variant="primary" icon="check" onClick={save} disabled={busy || (kind === 'penerimaan' ? !batchId : !total)}>
-            {busy ? 'Menyimpan…' : kind === 'penerimaan' ? 'Terima batch' : 'Simpan'}
-          </Button>
+          kind === 'penerimaan' ? (
+            <div className="flex flex-wrap gap-2">
+              <Button onClick={() => save(false)} disabled={busy || !batchId || !total}>
+                Simpan sebagian
+              </Button>
+              <Button variant="primary" icon="check" onClick={() => save(true)} disabled={busy || !batchId}>
+                {busy ? 'Menyimpan…' : 'Selesai & tutup batch'}
+              </Button>
+            </div>
+          ) : (
+            <Button variant="primary" icon="check" onClick={() => save()} disabled={busy || !total}>
+              {busy ? 'Menyimpan…' : 'Simpan'}
+            </Button>
+          )
         }
       >
         {!rows.length ? (
@@ -209,7 +229,8 @@ function Scan({ stock, onSaved }: { stock: StockRow[]; onSaved: () => void }) {
               <tr>
                 <th className={th}>Barang</th>
                 {kind === 'penerimaan' && batchId && <th className={`${th} text-right`}>Isi batch</th>}
-                <th className={`${th} text-center`}>{kind === 'penerimaan' ? 'Diterima' : 'Jumlah'}</th>
+                {kind === 'penerimaan' && batchId && <th className={`${th} text-right`}>Sudah diterima</th>}
+                <th className={`${th} text-center`}>{kind === 'penerimaan' ? 'Scan sekarang' : 'Jumlah'}</th>
                 {kind !== 'penerimaan' && <th className={`${th} text-right`}>Stok sistem</th>}
                 <th className={th}></th>
               </tr>
@@ -219,7 +240,8 @@ function Scan({ stock, onSaved }: { stock: StockRow[]; onSaved: () => void }) {
               const r = bySku.get(sku)
               const q = qtyOf(sku)
               const exp = expected.get(sku) ?? 0
-              const diff = q - exp
+              const prev = already.get(sku) ?? 0
+              const diff = prev + q - exp
               return (
                 <tr key={sku}>
                   <td className={td}>
@@ -227,6 +249,7 @@ function Scan({ stock, onSaved }: { stock: StockRow[]; onSaved: () => void }) {
                     <div className="text-[12px] text-muted">{sku}</div>
                   </td>
                   {kind === 'penerimaan' && batchId && <td className={tdNum}>{int(exp)}</td>}
+                  {kind === 'penerimaan' && batchId && <td className={`${tdNum} text-ink-2`}>{prev ? int(prev) : '–'}</td>}
                   <td className={td}>
                     <div className="flex items-center justify-center gap-1">
                       <IconButton icon="minus" label="Kurangi" onClick={() => add(sku, -1)} />
@@ -245,7 +268,11 @@ function Scan({ stock, onSaved }: { stock: StockRow[]; onSaved: () => void }) {
                       </div>
                       <IconButton icon="plus" label="Tambah" onClick={() => add(sku, 1)} />
                     </div>
-                    {kind === 'penerimaan' && batchId && diff !== 0 && <div className={`mt-1 text-center text-[12px] font-medium ${diff > 0 ? 'text-good' : 'text-bad'}`}>{diff > 0 ? `lebih ${diff}` : `kurang ${-diff}`}</div>}
+                    {kind === 'penerimaan' && batchId && (
+                      <div className={`mt-1 text-center text-[12px] font-medium ${diff === 0 ? 'text-good' : diff > 0 ? 'text-warn' : 'text-muted'}`}>
+                        {!exp ? 'tidak ada di batch' : diff === 0 ? 'lengkap' : diff > 0 ? `lebih ${diff}` : `sisa ${-diff}`}
+                      </div>
+                    )}
                   </td>
                   {kind !== 'penerimaan' && (
                     <td className={`${tdNum} ${dir === 'keluar' && r && q > r.onHand ? 'text-bad' : ''}`}>
@@ -262,7 +289,7 @@ function Scan({ stock, onSaved }: { stock: StockRow[]; onSaved: () => void }) {
         )}
         <div className="border-t border-line-soft px-5 py-3 text-[12.5px] text-muted">
           {kind === 'penerimaan'
-            ? 'Setelah disimpan, batch berubah jadi "Tiba". Selisih jumlah diterima dengan isi batch dicatat sebagai penyesuaian stok.'
+            ? '"Simpan sebagian": barang yang di-scan masuk stok, batch jadi "Tiba sebagian" dan bisa di-scan lagi saat sisanya datang. "Selesai & tutup batch": batch jadi "Tiba"; kekurangan atau kelebihan dicatat sebagai penyesuaian stok.'
             : k.affectsStock
               ? `Stok sistem ${dir === 'masuk' ? 'bertambah' : 'berkurang'} sesuai jumlah di atas.`
               : 'Catatan saja: stok sistem tidak berubah karena sudah dihitung dari data penjualan.'}

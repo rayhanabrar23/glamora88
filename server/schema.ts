@@ -73,7 +73,8 @@ export const SCHEMA: string[] = [
     purchase_id INTEGER NOT NULL REFERENCES purchases(id) ON DELETE CASCADE,
     sku TEXT NOT NULL,
     qty INTEGER NOT NULL,
-    price_cny REAL
+    price_cny REAL,
+    received_qty INTEGER NOT NULL DEFAULT 0
   )`,
   `CREATE TABLE IF NOT EXISTS stock_adjustments (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -132,6 +133,20 @@ export const SCHEMA: string[] = [
     adjustment_id INTEGER
   )`,
   `CREATE INDEX IF NOT EXISTS idx_moves_date ON stock_moves(move_date)`,
+  `CREATE TABLE IF NOT EXISTS backups (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    kind TEXT NOT NULL,
+    created_by TEXT,
+    size_bytes INTEGER NOT NULL DEFAULT 0,
+    counts TEXT
+  )`,
+  `CREATE TABLE IF NOT EXISTS backup_chunks (
+    backup_id INTEGER NOT NULL,
+    idx INTEGER NOT NULL,
+    data TEXT NOT NULL,
+    PRIMARY KEY (backup_id, idx)
+  )`,
   `CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,

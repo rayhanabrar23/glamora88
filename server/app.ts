@@ -3,6 +3,7 @@ import { Hono } from 'hono'
 import { checkOwnerPassword, checkPassword, clearOwnerCookie, clearSessionCookie, hashPassword, isOwner, makeOwnerCookie, makeSessionCookie, sessionUid, verifyPassword } from './auth'
 import type { AgendaItem } from '../shared/agenda'
 import { moveKind } from '../shared/moves'
+import { BACKUP_TABLES, exportTables, listBackups, makeBackup, readBackup, restoreTables } from './backup'
 import { computeKpi, kpiMonthKey, parseKpiConfig, parseKpiMonth, type KpiConfig, type KpiContext, type KpiMonthRecord } from '../shared/kpi'
 import { ensureSchema, getSettings, num, runBatched, type Env } from './db'
 import { DEFAULT_SETTINGS } from './schema'
@@ -88,6 +89,7 @@ const AREAS: [RegExp, string][] = [
   [/^\/api\/stock\/(moves|receive)/, 'Keluar-masuk barang'],
   [/^\/api\/stock/, 'Stok opname'],
   [/^\/api\/sku-map/, 'Pemetaan SKU'],
+  [/^\/api\/catalog\/import/, 'Impor katalog'],
   [/^\/api\/boosts/, 'Boost'],
   [/^\/api\/expenses/, 'Biaya operasional'],
   [/^\/api\/live/, 'Sesi live'],
@@ -95,6 +97,7 @@ const AREAS: [RegExp, string][] = [
   [/^\/api\/stores/, 'Toko'],
   [/^\/api\/kpi/, 'KPI'],
   [/^\/api\/data\/import/, 'Impor data'],
+  [/^\/api\/data\/backups/, 'Cadangan data'],
   [/^\/api\/data\/reset/, 'Reset data'],
   [/^\/api\/users/, 'Akun tim'],
   [/^\/api\/me\/password/, 'Ganti kata sandi'],
@@ -109,6 +112,8 @@ function summarize(path: string, body: unknown): string | null {
   if (Array.isArray(body)) return `${body.length} baris`
   if (!body || typeof body !== 'object') return null
   const b = body as Record<string, unknown>
+  if (Array.isArray(b.products) || Array.isArray(b.variants) || Array.isArray(b.skuMap))
+    return `${(b.products as unknown[] | undefined)?.length ?? 0} model, ${(b.variants as unknown[] | undefined)?.length ?? 0} varian, ${(b.skuMap as unknown[] | undefined)?.length ?? 0} pemetaan`
   for (const k of ['rows', 'lines', 'items', 'records']) if (Array.isArray(b[k])) return `${(b[k] as unknown[]).length} baris`
   const pick = ['title', 'name', 'sku', 'code', 'category', 'description', 'order_id', 'start_at', 'exp_date', 'boost_date', 'amount', 'store', 'host']
     .filter((k) => b[k] != null && b[k] !== '')
@@ -163,7 +168,7 @@ app.use('*', async (c, next) => {
   if (c.res.status >= 400) return
   const path = c.req.path
   const area = AREAS.find(([re]) => re.test(path))?.[1] ?? path.replace('/api/', '')
-  const action = path.endsWith('/finalize') ? 'finalisasi' : method === 'POST' ? 'tambah' : method === 'PUT' ? 'ubah' : method === 'DELETE' ? 'hapus' : method.toLowerCase()
+  const action = path.endsWith('/finalize') ? 'finalisasi' : path.endsWith('/restore') ? 'pulihkan' : method === 'POST' ? 'tambah' : method === 'PUT' ? 'ubah' : method === 'DELETE' ? 'hapus' : method.toLowerCase()
   const u = c.get('user')
   try {
     await c.env.DB.prepare('INSERT INTO audit_log (user_name, action, area, summary, method, path) VALUES (?,?,?,?,?,?)')
@@ -429,43 +434,88 @@ app.post('/stock/moves', async (c) => {
   return c.json({ ok: true, count: items.reduce((a, x) => a + x.qty, 0) })
 })
 app.delete('/stock/moves/:id', async (c) => {
-  const m = await c.env.DB.prepare('SELECT adjustment_id FROM stock_moves WHERE id = ?').bind(c.req.param('id')).first<{ adjustment_id: number | null }>()
+  const m = await c.env.DB.prepare('SELECT * FROM stock_moves WHERE id = ?').bind(c.req.param('id')).first<{ adjustment_id: number | null; kind: string; ref: string | null; sku: string; qty: number }>()
   if (!m) return c.json({ error: 'Catatan tidak ditemukan' }, 404)
+  if (m.kind === 'penerimaan' && m.ref && !m.adjustment_id) {
+    // scan penerimaan yang dibatalkan mengurangi "sudah diterima" di batchnya, selama batch belum ditutup
+    const p = await c.env.DB.prepare('SELECT id, status FROM purchases WHERE name = ?').bind(m.ref).first<{ id: number; status: string }>()
+    if (p?.status === 'Tiba') return c.json({ error: 'Batch ini sudah ditutup. Koreksi jumlahnya lewat Stock opname.' }, 400)
+    if (p) {
+      let left = m.qty
+      const rows = (await c.env.DB.prepare('SELECT id, received_qty FROM purchase_items WHERE purchase_id = ? AND sku = ? ORDER BY id DESC').bind(p.id, m.sku).all<{ id: number; received_qty: number }>()).results
+      for (const r of rows) {
+        const take = Math.min(left, r.received_qty)
+        if (take <= 0) continue
+        await c.env.DB.prepare('UPDATE purchase_items SET received_qty = received_qty - ? WHERE id = ?').bind(take, r.id).run()
+        left -= take
+      }
+    }
+  }
   if (m.adjustment_id) await c.env.DB.prepare('DELETE FROM stock_adjustments WHERE id = ?').bind(m.adjustment_id).run()
   await c.env.DB.prepare('DELETE FROM stock_moves WHERE id = ?').bind(c.req.param('id')).run()
   return c.json({ ok: true })
 })
 app.post('/stock/receive', async (c) => {
-  // penerimaan batch: { purchase_id, date, items: [{ sku, qty }] } → batch jadi "Tiba", selisih dicatat
-  const b = await c.req.json<{ purchase_id: number; date?: string; items: { sku: string; qty: number }[] }>()
-  const p = await c.env.DB.prepare('SELECT * FROM purchases WHERE id = ?').bind(b.purchase_id).first<{ id: number; name: string; status: string }>()
+  // penerimaan batch (boleh bertahap):
+  // { purchase_id, date, items: [{ sku, qty }], close } → hasil scan ditambahkan ke "sudah diterima".
+  // close = true: batch ditutup (status Tiba); selisih total diterima vs isi batch dicatat sebagai penyesuaian.
+  const b = await c.req.json<{ purchase_id: number; date?: string; items: { sku: string; qty: number }[]; close?: boolean }>()
+  const db = c.env.DB
+  const p = await db.prepare('SELECT * FROM purchases WHERE id = ?').bind(b.purchase_id).first<{ id: number; name: string; status: string; arrival_date: string | null }>()
   if (!p) return c.json({ error: 'Batch tidak ditemukan' }, 404)
   if (p.status === 'Tiba') return c.json({ error: `${p.name} sudah tercatat tiba` }, 400)
   const date = isDate(b.date) ? b.date! : new Date().toISOString().slice(0, 10)
-  const expected = new Map<string, number>()
-  for (const it of (await c.env.DB.prepare('SELECT sku, qty FROM purchase_items WHERE purchase_id = ?').bind(p.id).all<{ sku: string; qty: number }>()).results)
-    expected.set(it.sku, (expected.get(it.sku) ?? 0) + it.qty)
+  const rows = (await db.prepare('SELECT id, sku, qty, received_qty FROM purchase_items WHERE purchase_id = ? ORDER BY id').bind(p.id).all<{ id: number; sku: string; qty: number; received_qty: number }>()).results
   const got = new Map<string, number>()
   for (const it of b.items ?? []) if (it.sku && num(it.qty) > 0) got.set(String(it.sku), (got.get(String(it.sku)) ?? 0) + Math.round(num(it.qty)))
+  if (!b.close && ![...got.values()].some((v) => v > 0)) return c.json({ error: 'Belum ada barang yang discan' }, 400)
   const user = c.get('user').name
-  const diffs: { sku: string; diff: number }[] = []
-  for (const sku of new Set([...expected.keys(), ...got.keys()])) {
-    const diff = (got.get(sku) ?? 0) - (expected.get(sku) ?? 0)
-    let adj: number | null = null
-    if (diff !== 0) {
-      diffs.push({ sku, diff })
-      const r = await c.env.DB.prepare('INSERT INTO stock_adjustments (adj_date, sku, qty_delta, reason) VALUES (?,?,?,?) RETURNING id')
-        .bind(date, sku, diff, `Selisih penerimaan ${p.name} (scan ${user})`)
-        .first<{ id: number }>()
-      adj = r?.id ?? null
+  const addMove = (sku: string, qty: number, note: string | null, adj: number | null) =>
+    db.prepare('INSERT INTO stock_moves (move_date, sku, qty, direction, kind, ref, note, user_name, adjustment_id) VALUES (?,?,?,?,?,?,?,?,?)').bind(date, sku, qty, 'masuk', 'penerimaan', p.name, note, user, adj).run()
+  const addAdj = async (sku: string, delta: number, reason: string) =>
+    (await db.prepare('INSERT INTO stock_adjustments (adj_date, sku, qty_delta, reason) VALUES (?,?,?,?) RETURNING id').bind(date, sku, delta, reason).first<{ id: number }>())?.id ?? null
+  const extras: { sku: string; qty: number }[] = []
+  for (const [sku, qty] of got) {
+    const mine = rows.filter((r) => r.sku === sku)
+    if (!mine.length) {
+      // barang yang tidak ada di isi batch langsung masuk stok sebagai penyesuaian
+      extras.push({ sku, qty })
+      await addMove(sku, qty, 'tidak ada di isi batch', await addAdj(sku, qty, `Barang di luar isi ${p.name} (scan ${user})`))
+      continue
     }
-    if ((got.get(sku) ?? 0) > 0 || adj)
-      await c.env.DB.prepare('INSERT INTO stock_moves (move_date, sku, qty, direction, kind, ref, note, user_name, adjustment_id) VALUES (?,?,?,?,?,?,?,?,?)')
-        .bind(date, sku, got.get(sku) ?? 0, 'masuk', 'penerimaan', p.name, diff ? `isi batch ${expected.get(sku) ?? 0}, selisih ${diff > 0 ? '+' : ''}${diff}` : null, user, adj)
-        .run()
+    // isi ke baris batch secara berurutan; kelebihan masuk ke baris terakhir
+    let left = qty
+    for (const [i, r] of mine.entries()) {
+      const room = i === mine.length - 1 ? left : Math.max(0, Math.min(left, r.qty - r.received_qty))
+      if (room <= 0) continue
+      r.received_qty += room
+      left -= room
+      await db.prepare('UPDATE purchase_items SET received_qty = ? WHERE id = ?').bind(r.received_qty, r.id).run()
+      if (left <= 0) break
+    }
+    await addMove(sku, qty, null, null)
   }
-  await c.env.DB.prepare("UPDATE purchases SET status = 'Tiba', arrival_date = ? WHERE id = ?").bind(date, p.id).run()
-  return c.json({ ok: true, diffs })
+  const diffs: { sku: string; diff: number }[] = []
+  if (b.close) {
+    const bySku = new Map<string, { qty: number; got: number }>()
+    for (const r of rows) {
+      const x = bySku.get(r.sku) ?? { qty: 0, got: 0 }
+      x.qty += r.qty
+      x.got += r.received_qty
+      bySku.set(r.sku, x)
+    }
+    for (const [sku, x] of bySku) {
+      const diff = x.got - x.qty
+      if (!diff) continue
+      diffs.push({ sku, diff })
+      await addMove(sku, 0, `ditutup: isi batch ${x.qty}, diterima ${x.got}, selisih ${diff > 0 ? '+' : ''}${diff}`, await addAdj(sku, diff, `Selisih penerimaan ${p.name} (ditutup oleh ${user})`))
+    }
+    await db.prepare("UPDATE purchases SET status = 'Tiba', arrival_date = ? WHERE id = ?").bind(date, p.id).run()
+  } else {
+    await db.prepare("UPDATE purchases SET status = 'Tiba sebagian', arrival_date = COALESCE(arrival_date, ?) WHERE id = ?").bind(date, p.id).run()
+  }
+  const remaining = rows.reduce((a, r) => a + Math.max(0, r.qty - r.received_qty), 0)
+  return c.json({ ok: true, closed: !!b.close, diffs, extras, remaining })
 })
 
 app.get('/stock/adjustments', async (c) =>
@@ -572,6 +622,53 @@ app.get('/sku-map', async (c) => {
   ])
   return c.json({ map: map.results, unmapped: unmapped.results })
 })
+// Impor katalog sekaligus (produk, varian, pemetaan SKU TikTok) dari file Excel; data yang sudah ada diperbarui.
+app.post('/catalog/import', async (c) => {
+  const b = await c.req.json<{
+    products?: { code: string; name: string; category: string; reference?: string | null; status?: string; notes?: string | null }[]
+    variants?: { sku: string; product_code: string; color: string; price?: number | null; active?: number }[]
+    skuMap?: { platform_sku_id: string; sku: string; product_name?: string | null; variation?: string | null }[]
+  }>()
+  const db = c.env.DB
+  const products = (b.products ?? []).filter((p) => p.code && p.name)
+  const variants = (b.variants ?? []).filter((v) => v.sku && v.product_code)
+  const skuMap = (b.skuMap ?? []).filter((m) => /^\d+$/.test(String(m.platform_sku_id)) && m.sku)
+  const known = new Set([...(await db.prepare('SELECT code FROM products').all<{ code: string }>()).results.map((r) => r.code), ...products.map((p) => p.code)])
+  const badVariant = variants.filter((v) => !known.has(v.product_code)).map((v) => v.sku)
+  if (badVariant.length) return c.json({ error: `Model belum ada untuk varian: ${badVariant.slice(0, 5).join(', ')}` }, 400)
+  const skus = new Set([...(await db.prepare('SELECT sku FROM variants').all<{ sku: string }>()).results.map((r) => r.sku), ...variants.map((v) => v.sku)])
+  const badMap = skuMap.filter((m) => !skus.has(m.sku)).map((m) => m.sku)
+  if (badMap.length) return c.json({ error: `SKU portal tidak dikenal di pemetaan: ${[...new Set(badMap)].slice(0, 5).join(', ')}` }, 400)
+  await runBatched(db, [
+    ...products.map((p) =>
+      db
+        .prepare(
+          `INSERT INTO products (code, name, category, reference, status, notes) VALUES (?, ?, ?, ?, ?, ?)
+           ON CONFLICT(code) DO UPDATE SET name = excluded.name, category = excluded.category, reference = excluded.reference, status = excluded.status, notes = excluded.notes`,
+        )
+        .bind(p.code.trim(), p.name.trim(), p.category || 'Tas', str(p.reference), p.status || 'Aktif', str(p.notes)),
+    ),
+    ...variants.map((v) =>
+      db
+        .prepare(
+          `INSERT INTO variants (sku, product_code, color, price, active) VALUES (?, ?, ?, ?, ?)
+           ON CONFLICT(sku) DO UPDATE SET product_code = excluded.product_code, color = excluded.color, price = excluded.price, active = excluded.active`,
+        )
+        .bind(v.sku.trim(), v.product_code, String(v.color ?? '').trim(), v.price == null || !Number.isFinite(Number(v.price)) ? null : Number(v.price), v.active === 0 ? 0 : 1),
+    ),
+    ...skuMap.flatMap((m) => [
+      db
+        .prepare(
+          `INSERT INTO sku_map (platform_sku_id, sku, product_name, variation) VALUES (?, ?, ?, ?)
+           ON CONFLICT(platform_sku_id) DO UPDATE SET sku = excluded.sku, product_name = excluded.product_name, variation = excluded.variation`,
+        )
+        .bind(String(m.platform_sku_id), m.sku, str(m.product_name), str(m.variation)),
+      db.prepare('UPDATE sales SET sku = ? WHERE platform_sku_id = ?').bind(m.sku, String(m.platform_sku_id)),
+    ]),
+  ])
+  return c.json({ ok: true, products: products.length, variants: variants.length, skuMap: skuMap.length })
+})
+
 app.post('/sku-map', async (c) => {
   const b = await c.req.json<{ platform_sku_id: string; sku: string; product_name?: string; variation?: string }>()
   await c.env.DB.batch([
@@ -702,7 +799,11 @@ async function savePurchase(db: D1Database, b: Record<string, unknown>, id?: num
     str(b.notes),
   ]
   let pid = id
+  // jumlah yang sudah diterima lewat scan dipertahankan saat batch diubah
+  const received = new Map<string, number>()
   if (pid) {
+    for (const r of (await db.prepare('SELECT sku, received_qty FROM purchase_items WHERE purchase_id = ?').bind(pid).all<{ sku: string; received_qty: number }>()).results)
+      received.set(r.sku, (received.get(r.sku) ?? 0) + (r.received_qty ?? 0))
     await db
       .prepare('UPDATE purchases SET name=?, order_date=?, arrival_date=?, status=?, supplier=?, exchange_rate=?, cargo_cost=?, other_cost=?, notes=? WHERE id=?')
       .bind(...vals, pid)
@@ -720,11 +821,13 @@ async function savePurchase(db: D1Database, b: Record<string, unknown>, id?: num
     db,
     items
       .filter((x) => x.sku && num(x.qty) > 0)
-      .map((x) =>
-        db
-          .prepare('INSERT INTO purchase_items (purchase_id, sku, qty, price_cny) VALUES (?, ?, ?, ?)')
-          .bind(pid, x.sku, Math.round(num(x.qty)), x.price_cny === null || (x.price_cny as unknown) === '' ? null : num(x.price_cny)),
-      ),
+      .map((x) => {
+        const got = received.get(x.sku) ?? 0
+        received.delete(x.sku) // satu SKU di beberapa baris: jumlah diterima ditaruh di baris pertama
+        return db
+          .prepare('INSERT INTO purchase_items (purchase_id, sku, qty, price_cny, received_qty) VALUES (?, ?, ?, ?, ?)')
+          .bind(pid, x.sku, Math.round(num(x.qty)), x.price_cny === null || (x.price_cny as unknown) === '' ? null : num(x.price_cny), got)
+      }),
   )
   return pid
 }
@@ -1189,21 +1292,20 @@ app.delete('/live/:id', async (c) => {
 })
 
 // ---------- Cadangan & impor data lengkap ----------
-const TABLES = ['settings', 'stores', 'products', 'variants', 'sku_map', 'sales', 'purchases', 'purchase_items', 'stock_adjustments', 'boosts', 'expenses', 'live_sessions', 'settlements', 'agenda', 'stock_moves'] as const
+const TABLES = BACKUP_TABLES
 
 app.get('/data/export', async (c) => {
-  const out: Record<string, unknown[]> = {}
-  for (const t of TABLES) out[t] = (await c.env.DB.prepare(`SELECT * FROM ${t}`).all()).results
   c.header('Content-Disposition', `attachment; filename="glamora88-cadangan-${new Date().toISOString().slice(0, 10)}.json"`)
-  return c.json({ version: 1, exported_at: new Date().toISOString(), tables: out })
+  return c.json({ version: 1, exported_at: new Date().toISOString(), tables: await exportTables(c.env.DB) })
 })
 
 // Reset data: hapus isi tabel. keepSetup = pertahankan pengaturan, toko, produk, varian & pemetaan SKU.
-const SETUP_TABLES = ['settings', 'stores', 'products', 'variants', 'sku_map', 'agenda']
+const SETUP_TABLES: string[] = ['settings', 'stores', 'products', 'variants', 'sku_map', 'agenda']
 app.post('/data/reset', async (c) => {
   const body = await c.req.json<{ confirm?: string; keepSetup?: boolean }>().catch(() => ({}) as { confirm?: string; keepSetup?: boolean })
   if (body.confirm !== 'RESET') return c.json({ error: 'Konfirmasi tidak cocok' }, 400)
   const db = c.env.DB
+  await makeBackup(db, 'sebelum reset', c.get('user').name)
   const targets = [...TABLES].reverse().filter((t) => !(body.keepSetup && SETUP_TABLES.includes(t)))
   const counts: Record<string, number> = {}
   for (const t of targets) {
@@ -1220,22 +1322,29 @@ app.post('/data/reset', async (c) => {
 app.post('/data/import', async (c) => {
   const body = await c.req.json<{ tables: Record<string, Record<string, unknown>[]> }>()
   if (!body?.tables) return c.json({ error: 'Format file tidak dikenali' }, 400)
-  const db = c.env.DB
-  // hapus dari tabel anak dulu
-  for (const t of [...TABLES].reverse()) if (body.tables[t]) await db.prepare(`DELETE FROM ${t}`).run()
-  const counts: Record<string, number> = {}
-  for (const t of TABLES) {
-    const rows = body.tables[t]
-    if (!rows?.length) continue
-    const cols = Object.keys(rows[0]).filter((k) => /^[a-z_]+$/.test(k))
-    const sql = `INSERT INTO ${t} (${cols.join(',')}) VALUES (${cols.map(() => '?').join(',')})`
-    await runBatched(
-      db,
-      rows.map((r) => db.prepare(sql).bind(...cols.map((k) => (r[k] === undefined ? null : r[k])))),
-    )
-    counts[t] = rows.length
-  }
-  return c.json({ ok: true, counts })
+  await makeBackup(c.env.DB, 'sebelum impor', c.get('user').name)
+  return c.json({ ok: true, counts: await restoreTables(c.env.DB, body.tables) })
+})
+
+// ---------- Cadangan otomatis (khusus owner) ----------
+app.get('/data/backups', async (c) => c.json(await listBackups(c.env.DB)))
+app.post('/data/backups', async (c) => c.json({ ok: true, id: await makeBackup(c.env.DB, 'manual', c.get('user').name) }))
+app.get('/data/backups/:id', async (c) => {
+  const json = await readBackup(c.env.DB, Number(c.req.param('id')))
+  if (!json) return c.json({ error: 'Cadangan tidak ditemukan' }, 404)
+  const row = await c.env.DB.prepare('SELECT created_at FROM backups WHERE id = ?').bind(Number(c.req.param('id'))).first<{ created_at: string }>()
+  c.header('Content-Type', 'application/json')
+  c.header('Content-Disposition', `attachment; filename="glamora88-cadangan-${(row?.created_at ?? '').slice(0, 10)}-${c.req.param('id')}.json"`)
+  return c.body(json)
+})
+app.post('/data/backups/:id/restore', async (c) => {
+  const b = await c.req.json<{ confirm?: string }>().catch(() => ({}) as { confirm?: string })
+  if (b.confirm !== 'PULIHKAN') return c.json({ error: 'Konfirmasi tidak cocok' }, 400)
+  const json = await readBackup(c.env.DB, Number(c.req.param('id')))
+  if (!json) return c.json({ error: 'Cadangan tidak ditemukan' }, 404)
+  await makeBackup(c.env.DB, 'sebelum pemulihan', c.get('user').name)
+  const data = JSON.parse(json) as { tables: Record<string, Record<string, unknown>[]> }
+  return c.json({ ok: true, counts: await restoreTables(c.env.DB, data.tables) })
 })
 
 export default app

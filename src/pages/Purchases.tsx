@@ -31,7 +31,7 @@ import {
 
 type Form = Partial<Purchase> & { items: { sku: string; qty: number | ''; price_cny: number | '' | null }[] }
 
-const statusTone = { Dipesan: 'warn', 'Dalam perjalanan': 'info', Tiba: 'good' } as const
+const statusTone = { Dipesan: 'warn', 'Dalam perjalanan': 'info', 'Tiba sebagian': 'gold', Tiba: 'good' } as const
 
 function costOf(p: Purchase | Form, items: { qty: number | ''; price_cny: number | '' | null }[], fallback: number) {
   const q = items.reduce((a, i) => a + (Number(i.qty) || 0), 0)
@@ -77,6 +77,8 @@ export default function Purchases() {
   const itemsOf = (id: number) => data.items.filter((i) => i.purchase_id === id)
   const all = data.purchases.map((p) => ({ p, c: costOf(p, itemsOf(p.id), fallback) }))
   const inTransit = all.filter((x) => x.p.status !== 'Tiba')
+  // pcs yang belum datang: isi batch dikurangi yang sudah diterima lewat scan
+  const notArrived = (id: number) => itemsOf(id).reduce((a, i) => a + Math.max(0, i.qty - (i.received_qty ?? 0)), 0)
   async function remove(p: Purchase) {
     if (!confirmDelete(p.name)) return
     await api.del(`/purchases/${p.id}`)
@@ -105,7 +107,7 @@ export default function Purchases() {
         <Stat label="Total nilai pembelian" value={rp(all.reduce((a, x) => a + x.c.total, 0), { compact: true })} />
         <Stat
           label="Belum tiba"
-          value={`${int(inTransit.reduce((a, x) => a + x.c.qty, 0))} pcs`}
+          value={`${int(inTransit.reduce((a, x) => a + notArrived(x.p.id), 0))} pcs`}
           hint={inTransit.length ? `${inTransit.length} batch · ${rp(inTransit.reduce((a, x) => a + x.c.total, 0), { compact: true })}` : 'Semua batch sudah tiba'}
         />
       </div>
@@ -135,7 +137,7 @@ export default function Purchases() {
             >
               <dl className="grid grid-cols-2 gap-3 lg:grid-cols-4">
                 {[
-                  ['Isi batch', `${int(c.qty)} pcs`],
+                  p.status === 'Tiba' || c.qty - notArrived(p.id) <= 0 ? ['Isi batch', `${int(c.qty)} pcs`] : ['Sudah diterima', `${int(c.qty - notArrived(p.id))} dari ${int(c.qty)} pcs`],
                   ['Total biaya', rp(c.total)],
                   ['Landed cost rata-rata', `${rp(c.perPcs)} / pcs`],
                   ['Kurs · cargo + lain', `Rp${int(p.exchange_rate)} · ${rp(c.overhead, { compact: true })}`],

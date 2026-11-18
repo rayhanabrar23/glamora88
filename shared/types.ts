@@ -21,7 +21,7 @@ export const PRIVATE_EXPENSE_CATEGORIES = ['Gaji', 'Komisi']
 export const CLASSIFICATIONS = ['Tetap', 'Tetap (diskresioner)', 'Semi-variabel', 'Variabel'] as const
 export type Classification = (typeof CLASSIFICATIONS)[number]
 
-export const PURCHASE_STATUSES = ['Dipesan', 'Dalam perjalanan', 'Tiba'] as const
+export const PURCHASE_STATUSES = ['Dipesan', 'Dalam perjalanan', 'Tiba sebagian', 'Tiba'] as const
 
 export const PRODUCT_CATEGORIES = ['Tas', 'Dompet', 'Aksesoris', 'Kemasan'] as const
 
@@ -88,6 +88,8 @@ export interface PurchaseItem {
   sku: string
   qty: number
   price_cny: number | null
+  /** pcs yang sudah diterima lewat scan (untuk batch yang datang bertahap) */
+  received_qty?: number | null
 }
 
 export interface StockAdjustment {
