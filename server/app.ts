@@ -147,7 +147,10 @@ app.use('*', async (c, next) => {
   // sesi diperpanjang otomatis selama portal dipakai (sisa < 6 jam → cookie baru 12 jam)
   if (info.exp - Date.now() / 1000 < SESSION_TTL / 2) c.header('Set-Cookie', await makeSessionCookie(c.env, uid), { append: true })
   let user: SessionUser
-  if (uid === -1) user = { id: -1, name: 'Owner', role: 'Owner' }
+  if (uid === -1) {
+    const n = await c.env.DB.prepare("SELECT value FROM settings WHERE key = 'owner_name'").first<{ value: string }>()
+    user = { id: -1, name: n?.value?.trim() || 'Owner', role: 'Owner' }
+  }
   else if (uid === 0) {
     // sesi kata sandi bersama berhenti berlaku begitu akun per orang dipakai
     if (await accountsEnabled(c.env.DB)) return c.json({ error: 'Silakan masuk dengan akun masing-masing' }, 401)
@@ -184,6 +187,7 @@ const AREAS: [RegExp, string][] = [
   [/^\/api\/users/, 'Akun tim'],
   [/^\/api\/me\/password/, 'Ganti kata sandi'],
   [/^\/api\/me\/photo/, 'Foto profil'],
+  [/^\/api\/me\/name/, 'Nama owner'],
   [/^\/api\/agenda/, 'Agenda'],
 ]
 const SKIP_AUDIT = new Set(['/api/login', '/api/logout', '/api/owner/login', '/api/owner/logout'])
@@ -319,6 +323,13 @@ app.get('/me', async (c) => {
     user: { ...u, username: extra?.username ?? (u.id === -1 ? 'owner' : null), photo: photo && key ? `/api/photo/${key}?v=${encodeURIComponent(photo.updated_at)}` : null },
     accounts: await accountsEnabled(c.env.DB),
   })
+})
+app.put('/me/name', async (c) => {
+  if (c.get('user').id !== -1) return c.json({ error: 'Nama staf diatur owner di Pengaturan › Akun tim.' }, 403)
+  const name = String((await c.req.json<{ name?: string }>()).name ?? '').trim().slice(0, 40)
+  if (!name) return c.json({ error: 'Nama tidak boleh kosong' }, 400)
+  await c.env.DB.prepare("INSERT INTO settings (key, value) VALUES ('owner_name', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").bind(name).run()
+  return c.json({ ok: true })
 })
 app.get('/photo/:key', async (c) => {
   const row = await c.env.DB.prepare('SELECT data FROM profile_photos WHERE owner_key = ?').bind(c.req.param('key')).first<{ data: string }>()

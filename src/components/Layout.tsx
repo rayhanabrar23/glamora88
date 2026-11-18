@@ -357,6 +357,37 @@ function UserMenu({ onLogout }: { onLogout: () => void }) {
   )
 }
 
+function OwnerName({ name, onSaved }: { name: string; onSaved: () => void }) {
+  const [v, setV] = useState(name)
+  const [edit, setEdit] = useState(false)
+  const toast = useToast()
+  async function save() {
+    try {
+      await api.put('/me/name', { name: v })
+      toast('Nama disimpan')
+      setEdit(false)
+      onSaved()
+    } catch (e) {
+      toast((e as Error).message, 'bad')
+    }
+  }
+  return edit ? (
+    <div className="flex items-center gap-2">
+      <Input className="h-9" value={v} onChange={(e) => setV(e.target.value)} autoFocus aria-label="Nama owner" />
+      <Button variant="primary" onClick={save} disabled={!v.trim()}>
+        Simpan
+      </Button>
+    </div>
+  ) : (
+    <div className="flex items-center justify-center gap-1 sm:justify-start">
+      <span className="text-[19px] font-semibold text-ink">{name}</span>
+      <button type="button" aria-label="Ubah nama" onClick={() => setEdit(true)} className="flex h-8 w-8 items-center justify-center rounded-lg text-muted hover:text-navy">
+        <Icon name="edit" size={15} />
+      </button>
+    </div>
+  )
+}
+
 function Profile({ onClose, onPassword }: { onClose: () => void; onPassword: () => void }) {
   const { user, refresh } = useMe()
   const [busy, setBusy] = useState(false)
@@ -390,7 +421,11 @@ function Profile({ onClose, onPassword }: { onClose: () => void; onPassword: () 
       <div className="flex flex-col items-center gap-4 text-center sm:flex-row sm:items-center sm:text-left">
         <Avatar name={user.name} photo={user.photo} size={104} className="text-[34px]" />
         <div className="min-w-0 flex-1">
-          <div className="text-[19px] font-semibold text-ink">{user.name}</div>
+          {user.id === -1 ? (
+            <OwnerName name={user.name} onSaved={refresh} />
+          ) : (
+            <div className="text-[19px] font-semibold text-ink">{user.name}</div>
+          )}
           <div className="text-[13.5px] text-muted">
             {user.role}
             {user.username ? ` · @${user.username}` : ''}
