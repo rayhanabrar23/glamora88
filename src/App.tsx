@@ -23,6 +23,11 @@ import { MeContext, type Me } from './lib/me'
 export default function App() {
   const [auth, setAuth] = useState<'checking' | 'in' | 'out'>('checking')
   const [me, setMe] = useState<{ user: Me | null; accounts: boolean }>({ user: null, accounts: false })
+  const refreshMe = () =>
+    api
+      .get<{ user: Me; accounts: boolean }>('/me')
+      .then((r) => setMe({ user: r.user, accounts: r.accounts }))
+      .catch(() => {})
   const check = () =>
     api
       .get<{ user: Me; accounts: boolean }>('/me')
@@ -50,7 +55,7 @@ export default function App() {
       ) : auth === 'out' ? (
         <Login onSuccess={check} />
       ) : (
-        <MeContext.Provider value={me}>
+        <MeContext.Provider value={{ ...me, refresh: refreshMe }}>
         <BrowserRouter>
           <Layout onLogout={logout}>
             <Routes>

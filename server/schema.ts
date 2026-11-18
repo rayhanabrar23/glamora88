@@ -133,6 +133,16 @@ export const SCHEMA: string[] = [
     adjustment_id INTEGER
   )`,
   `CREATE INDEX IF NOT EXISTS idx_moves_date ON stock_moves(move_date)`,
+  `CREATE TABLE IF NOT EXISTS login_attempts (
+    key TEXT NOT NULL,
+    at TEXT NOT NULL DEFAULT (datetime('now'))
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_attempts ON login_attempts(key, at)`,
+  `CREATE TABLE IF NOT EXISTS profile_photos (
+    owner_key TEXT PRIMARY KEY,
+    data TEXT NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  )`,
   `CREATE TABLE IF NOT EXISTS backups (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),

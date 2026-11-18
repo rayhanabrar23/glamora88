@@ -7,6 +7,7 @@ import { Button, Callout, Card, confirmDelete, Field, IconButton, Input, Modal, 
 import type { Store } from '../../shared/types'
 import { parseTeamCommission, type TeamMember } from '../../shared/commission'
 import { lockOwner, OwnerGate } from '../components/OwnerGate'
+import { Avatar } from '../components/Avatar'
 
 const FIELDS: { key: string; label: string; hint: string; kind: 'pct' | 'rp' | 'num' }[] = [
   { key: 'platform_commission_pct', label: 'Komisi platform', hint: 'Persen dari harga jual', kind: 'pct' },
@@ -92,7 +93,7 @@ function Rates({ settings, onSaved }: { settings: Record<string, string>; onSave
 }
 
 // ---------- Akun tim ----------
-type UserRow = { id: number; name: string; username: string; role: string; active: number; created_at: string }
+type UserRow = { id: number; name: string; username: string; role: string; active: number; created_at: string; photo: string | null }
 function Accounts() {
   const { data, reload } = useData<UserRow[]>('/users')
   const [form, setForm] = useState<{ id?: number; name: string; username: string; role: string; password: string } | null>(null)
@@ -149,7 +150,12 @@ function Accounts() {
         >
           {users.map((u) => (
             <tr key={u.id} className={u.active ? '' : 'opacity-60'}>
-              <td className={`${td} font-medium text-ink`}>{u.name}</td>
+              <td className={td}>
+                <span className="flex items-center gap-2.5 font-medium text-ink">
+                  <Avatar name={u.name} photo={u.photo} size={30} />
+                  {u.name}
+                </span>
+              </td>
               <td className={`${td} text-ink-2`}>{u.username}</td>
               <td className={td}>{u.role}</td>
               <td className={td}>{u.active ? <span className="text-good">Aktif</span> : <span className="text-muted">Nonaktif</span>}</td>

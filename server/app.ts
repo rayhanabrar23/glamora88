@@ -16,14 +16,70 @@ import { PRIVATE_EXPENSE_CATEGORIES, type ImportedSaleLine } from '../shared/typ
 type SessionUser = { id: number; name: string; role: string }
 const app = new Hono<{ Bindings: Env; Variables: { user: SessionUser } }>().basePath('/api')
 
+// Pesan error untuk pengguna dibuat umum; detail teknis (nama tabel/kolom database) hanya masuk log server.
 app.onError((err, c) => {
   console.error(err)
-  return c.json({ error: err.message || 'Terjadi kesalahan di server' }, 500)
+  const msg = err.message || ''
+  const technical = /D1_|SQLITE|constraint|no such (table|column)|syntax error|TypeError|Cannot read|undefined|null/i.test(msg)
+  return c.json({ error: technical || !msg ? 'Terjadi kesalahan di server. Periksa isian, lalu coba lagi.' : msg }, 500)
+})
+
+// Header keamanan untuk semua respons API
+app.use('*', async (c, next) => {
+  await next()
+  c.header('X-Content-Type-Options', 'nosniff')
+  c.header('Cache-Control', c.res.headers.get('Cache-Control') ?? 'no-store')
+  c.header('Referrer-Policy', 'strict-origin-when-cross-origin')
+})
+
+// Perlindungan CSRF: permintaan yang mengubah data wajib JSON dan harus berasal dari portal ini sendiri.
+app.use('*', async (c, next) => {
+  const m = c.req.method
+  if (m === 'GET' || m === 'HEAD' || m === 'OPTIONS') return next()
+  const site = c.req.header('Sec-Fetch-Site')
+  if (site && site !== 'same-origin' && site !== 'none') return c.json({ error: 'Permintaan ditolak' }, 403)
+  const origin = c.req.header('Origin')
+  if (origin && new URL(origin).host !== new URL(c.req.url).host) return c.json({ error: 'Permintaan ditolak' }, 403)
+  const ct = c.req.header('Content-Type') ?? ''
+  const hasBody = Number(c.req.header('Content-Length') ?? '0') > 0 || !!c.req.header('Transfer-Encoding')
+  if (hasBody && !ct.includes('application/json')) return c.json({ error: 'Format permintaan tidak didukung' }, 415)
+  return next()
 })
 
 // ---------- Autentikasi: akun per orang (tabel users) ----------
 const PUBLIC = new Set(['/api/login', '/api/logout', '/api/login-info'])
 const accountsEnabled = async (db: D1Database) => ((await db.prepare('SELECT COUNT(*) AS n FROM users WHERE active = 1').first<{ n: number }>())?.n ?? 0) > 0
+
+// Batas percobaan: 5 kali salah per akun (atau 20 kali per perangkat/IP) dalam 15 menit → dikunci 15 menit.
+const WINDOW_MIN = 15
+const MAX_PER_ACCOUNT = 5
+const MAX_PER_IP = 20
+const clientIp = (c: { req: { header: (k: string) => string | undefined } }) => c.req.header('CF-Connecting-IP') ?? c.req.header('X-Forwarded-For')?.split(',')[0]?.trim() ?? 'lokal'
+async function lockedMinutes(db: D1Database, keys: [string, number][]) {
+  let worst = 0
+  for (const [key, max] of keys) {
+    const r = await db
+      .prepare(`SELECT COUNT(*) AS n, MIN(at) AS first FROM login_attempts WHERE key = ? AND at > datetime('now', '-${WINDOW_MIN} minutes')`)
+      .bind(key)
+      .first<{ n: number; first: string | null }>()
+    if (r && r.n >= max && r.first) {
+      const left = WINDOW_MIN - Math.floor((Date.now() - Date.parse(`${r.first.replace(' ', 'T')}Z`)) / 60000)
+      worst = Math.max(worst, Math.max(1, left))
+    }
+  }
+  return worst
+}
+async function recordFailure(db: D1Database, keys: string[]) {
+  await db.batch([
+    ...keys.map((k) => db.prepare('INSERT INTO login_attempts (key) VALUES (?)').bind(k)),
+    db.prepare("DELETE FROM login_attempts WHERE at < datetime('now', '-1 day')"),
+  ])
+}
+const clearFailures = (db: D1Database, key: string) => db.prepare('DELETE FROM login_attempts WHERE key = ?').bind(key).run()
+const auditRaw = (db: D1Database, who: string, action: string, area: string, summary: string, path: string) =>
+  db.prepare('INSERT INTO audit_log (user_name, action, area, summary, method, path) VALUES (?,?,?,?,?,?)').bind(who, action, area, summary, 'POST', path).run()
+// hash tiruan: dipakai saat nama pengguna tidak ada, supaya waktu respons sama dengan akun yang ada
+let dummyHash: { hash: string; salt: string } | null = null
 
 app.use('*', async (c, next) => {
   if (!c.env.DB) return c.json({ error: 'Database D1 belum terhubung (binding "DB"). Lihat README.' }, 503)
@@ -35,19 +91,39 @@ app.post('/login', async (c) => {
   const body = await c.req.json<{ username?: string; password?: string }>().catch(() => ({}) as { username?: string; password?: string })
   const username = (body.username ?? '').trim().toLowerCase()
   const password = body.password ?? ''
+  const db = c.env.DB
+  const ip = clientIp(c)
+  const userKey = `login:${username || '(tim)'}`
+  const ipKey = `ip:${ip}`
+  const wait = await lockedMinutes(db, [
+    [userKey, MAX_PER_ACCOUNT],
+    [ipKey, MAX_PER_IP],
+  ])
+  if (wait) return c.json({ error: `Terlalu banyak percobaan masuk. Coba lagi dalam ${wait} menit.` }, 429)
   let uid: number | null = null
   if (username === 'owner') {
     if (checkOwnerPassword(password, c.env)) uid = -1
   } else if (username) {
-    const u = await c.env.DB.prepare('SELECT id, pass_hash, pass_salt FROM users WHERE lower(username) = ? AND active = 1').bind(username).first<{ id: number; pass_hash: string; pass_salt: string }>()
-    if (u && (await verifyPassword(password, u.pass_hash, u.pass_salt))) uid = u.id
-  } else if (!(await accountsEnabled(c.env.DB))) {
+    const u = await db.prepare('SELECT id, pass_hash, pass_salt FROM users WHERE lower(username) = ? AND active = 1').bind(username).first<{ id: number; pass_hash: string; pass_salt: string }>()
+    if (u) {
+      if (await verifyPassword(password, u.pass_hash, u.pass_salt)) uid = u.id
+    } else {
+      dummyHash = dummyHash ?? (await hashPassword('glamora-dummy'))
+      await verifyPassword(password, dummyHash.hash, dummyHash.salt)
+    }
+  } else if (!(await accountsEnabled(db))) {
     if (!c.env.APP_PASSWORD) return c.json({ error: 'APP_PASSWORD belum diatur di Cloudflare (lihat README).' }, 503)
     if (checkPassword(password, c.env)) uid = 0
   } else {
     return c.json({ error: 'Masukkan nama pengguna. Kata sandi tim bersama sudah tidak dipakai.' }, 401)
   }
-  if (uid == null) return c.json({ error: 'Nama pengguna atau kata sandi salah' }, 401)
+  if (uid == null) {
+    await recordFailure(db, [userKey, ipKey])
+    const now = await lockedMinutes(db, [[userKey, MAX_PER_ACCOUNT]])
+    if (now) await auditRaw(db, username || '(tanpa nama)', 'diblokir', 'Login', `${MAX_PER_ACCOUNT}x salah kata sandi, dikunci ${WINDOW_MIN} menit (IP ${ip})`, '/api/login')
+    return c.json({ error: 'Nama pengguna atau kata sandi salah' }, 401)
+  }
+  await clearFailures(db, userKey)
   c.header('Set-Cookie', await makeSessionCookie(c.env, uid))
   // kunci owner dari pengguna sebelumnya di browser ini tidak ikut terbawa
   c.header('Set-Cookie', clearOwnerCookie(), { append: true })
@@ -101,10 +177,12 @@ const AREAS: [RegExp, string][] = [
   [/^\/api\/data\/reset/, 'Reset data'],
   [/^\/api\/users/, 'Akun tim'],
   [/^\/api\/me\/password/, 'Ganti kata sandi'],
+  [/^\/api\/me\/photo/, 'Foto profil'],
   [/^\/api\/agenda/, 'Agenda'],
 ]
 const SKIP_AUDIT = new Set(['/api/login', '/api/logout', '/api/owner/login', '/api/owner/logout'])
 function summarize(path: string, body: unknown): string | null {
+  if (/^\/api\/me\/photo/.test(path)) return null
   if (/^\/api\/(users|me\/password|owner)/.test(path)) {
     const b = body as Record<string, unknown> | null
     return b && typeof b === 'object' ? [b.name, b.username].filter(Boolean).join(' · ') || null : null
@@ -200,7 +278,21 @@ app.get('/owner', async (c) => c.json({ owner: await ownerOk(c), configured: !!c
 app.post('/owner/login', async (c) => {
   if (!c.env.OWNER_PASSWORD) return c.json({ error: 'OWNER_PASSWORD belum diatur di Cloudflare.' }, 503)
   const body = await c.req.json<{ password?: string }>().catch(() => ({ password: '' }))
-  if (!checkOwnerPassword(body.password ?? '', c.env)) return c.json({ error: 'Kata sandi owner salah' }, 403)
+  const u = c.get('user')
+  const key = `owner:${u.id}`
+  const ipKey = `ip:${clientIp(c)}`
+  const wait = await lockedMinutes(c.env.DB, [
+    [key, MAX_PER_ACCOUNT],
+    [ipKey, MAX_PER_IP],
+  ])
+  if (wait) return c.json({ error: `Terlalu banyak percobaan. Coba lagi dalam ${wait} menit.` }, 429)
+  if (!checkOwnerPassword(body.password ?? '', c.env)) {
+    await recordFailure(c.env.DB, [key, ipKey])
+    // percobaan membuka kunci owner yang salah dicatat di riwayat supaya owner tahu
+    await auditRaw(c.env.DB, u.name, 'gagal', 'Buka kunci owner', 'Kata sandi owner salah', '/api/owner/login')
+    return c.json({ error: 'Kata sandi owner salah' }, 403)
+  }
+  await clearFailures(c.env.DB, key)
   c.header('Set-Cookie', await makeOwnerCookie(c.env, c.get('user').id))
   return c.json({ ok: true })
 })
@@ -209,7 +301,44 @@ app.post('/owner/logout', (c) => {
   return c.json({ ok: true })
 })
 
-app.get('/me', async (c) => c.json({ ok: true, user: c.get('user'), accounts: await accountsEnabled(c.env.DB) }))
+// ---------- Profil & foto ----------
+const photoKey = (id: number) => (id === -1 ? 'owner' : id > 0 ? `u:${id}` : null)
+app.get('/me', async (c) => {
+  const u = c.get('user')
+  const key = photoKey(u.id)
+  const photo = key ? await c.env.DB.prepare('SELECT updated_at FROM profile_photos WHERE owner_key = ?').bind(key).first<{ updated_at: string }>() : null
+  const extra = u.id > 0 ? await c.env.DB.prepare('SELECT username, created_at FROM users WHERE id = ?').bind(u.id).first<{ username: string; created_at: string }>() : null
+  return c.json({
+    ok: true,
+    user: { ...u, username: extra?.username ?? (u.id === -1 ? 'owner' : null), photo: photo && key ? `/api/photo/${key}?v=${encodeURIComponent(photo.updated_at)}` : null },
+    accounts: await accountsEnabled(c.env.DB),
+  })
+})
+app.get('/photo/:key', async (c) => {
+  const row = await c.env.DB.prepare('SELECT data FROM profile_photos WHERE owner_key = ?').bind(c.req.param('key')).first<{ data: string }>()
+  if (!row) return c.json({ error: 'Foto tidak ditemukan' }, 404)
+  const m = row.data.match(/^data:(image\/(?:jpeg|png|webp));base64,(.+)$/)
+  if (!m) return c.json({ error: 'Foto rusak' }, 500)
+  const bytes = Uint8Array.from(atob(m[2]), (ch) => ch.charCodeAt(0))
+  return new Response(bytes, { headers: { 'Content-Type': m[1], 'Cache-Control': 'private, max-age=86400', 'X-Content-Type-Options': 'nosniff' } })
+})
+app.put('/me/photo', async (c) => {
+  const key = photoKey(c.get('user').id)
+  if (!key) return c.json({ error: 'Masuk dengan akun masing-masing untuk memasang foto.' }, 400)
+  const b = await c.req.json<{ data?: string }>()
+  const data = String(b.data ?? '')
+  if (!/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(data)) return c.json({ error: 'Format foto tidak didukung' }, 400)
+  if (data.length > 400_000) return c.json({ error: 'Foto terlalu besar' }, 400)
+  await c.env.DB.prepare("INSERT INTO profile_photos (owner_key, data, updated_at) VALUES (?, ?, datetime('now')) ON CONFLICT(owner_key) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at")
+    .bind(key, data)
+    .run()
+  return c.json({ ok: true })
+})
+app.delete('/me/photo', async (c) => {
+  const key = photoKey(c.get('user').id)
+  if (key) await c.env.DB.prepare('DELETE FROM profile_photos WHERE owner_key = ?').bind(key).run()
+  return c.json({ ok: true })
+})
 app.put('/me/password', async (c) => {
   const u = c.get('user')
   if (u.id <= 0) return c.json({ error: 'Kata sandi ini diatur di Cloudflare, bukan dari portal.' }, 400)
@@ -223,7 +352,15 @@ app.put('/me/password', async (c) => {
 })
 
 // ---------- Akun tim (khusus owner) ----------
-app.get('/users', async (c) => c.json((await c.env.DB.prepare('SELECT id, name, username, role, active, created_at FROM users ORDER BY active DESC, name').all()).results))
+app.get('/users', async (c) =>
+  c.json(
+    (
+      await c.env.DB.prepare(
+        "SELECT u.id, u.name, u.username, u.role, u.active, u.created_at, '/api/photo/u:' || u.id || '?v=' || p.updated_at AS photo FROM users u LEFT JOIN profile_photos p ON p.owner_key = 'u:' || u.id ORDER BY u.active DESC, u.name",
+      ).all()
+    ).results,
+  ),
+)
 app.post('/users', async (c) => {
   const b = await c.req.json<{ name?: string; username?: string; password?: string; role?: string }>()
   const username = (b.username ?? '').trim().toLowerCase()

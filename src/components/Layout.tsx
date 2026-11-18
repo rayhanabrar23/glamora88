@@ -7,6 +7,7 @@ import { api } from '../lib/api'
 import { expandAgenda, isForPerson, type AgendaItem } from '../../shared/agenda'
 import { Icon } from './Icon'
 import { Button, cx, Field, Input, Modal, useToast } from './ui'
+import { Avatar, squarePhoto } from './Avatar'
 
 const NAV = [
   { to: '/', label: 'Ringkasan', icon: 'dashboard', end: true },
@@ -288,16 +289,10 @@ function UserMenu({ onLogout }: { onLogout: () => void }) {
   const { user } = useMe()
   const [open, setOpen] = useState(false)
   const [pwOpen, setPwOpen] = useState(false)
+  const [profileOpen, setProfileOpen] = useState(false)
   const ref = useClickOutside(() => setOpen(false))
   if (!user) return null
-  const initials = user.name
-    .replace(/[^\p{L}\s]/gu, '')
-    .split(/\s+/)
-    .filter(Boolean)
-    .map((w) => w[0])
-    .join('')
-    .slice(0, 2)
-    .toUpperCase()
+  const item = 'flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left text-[13.5px] font-medium text-ink-2 hover:bg-gold-soft/70 hover:text-navy'
   return (
     <div ref={ref} className="relative shrink-0">
       <button
@@ -307,15 +302,30 @@ function UserMenu({ onLogout }: { onLogout: () => void }) {
         aria-expanded={open}
         className={cx('flex h-10 items-center gap-2 rounded-full border border-line bg-white pr-1 pl-1 text-[13.5px] font-medium text-ink-2 transition-colors hover:text-navy sm:pr-3.5', open ? 'border-gold text-navy' : '')}
       >
-        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-navy text-[12px] font-semibold text-white">{initials || '?'}</span>
+        <Avatar name={user.name} photo={user.photo} size={32} />
         <span className="hidden max-w-[120px] truncate sm:inline">{user.name}</span>
       </button>
       {open && (
-        <div className="glass-strong pop-in absolute top-12 right-0 z-50 w-[240px] rounded-2xl p-1.5">
-          <div className="px-3 pt-2 pb-2.5">
-            <div className="text-[14px] font-semibold text-ink">{user.name}</div>
-            <div className="text-[12.5px] text-muted">{user.role}</div>
+        <div className="glass-strong pop-in absolute top-12 right-0 z-50 w-[250px] rounded-2xl p-1.5">
+          <div className="flex items-center gap-3 px-3 pt-2 pb-2.5">
+            <Avatar name={user.name} photo={user.photo} size={40} />
+            <div className="min-w-0">
+              <div className="truncate text-[14px] font-semibold text-ink">{user.name}</div>
+              <div className="text-[12.5px] text-muted">{user.role}</div>
+            </div>
           </div>
+          {user.id !== 0 && (
+            <button
+              type="button"
+              onClick={() => {
+                setOpen(false)
+                setProfileOpen(true)
+              }}
+              className={item}
+            >
+              <Icon name="users" size={15} /> Profil saya
+            </button>
+          )}
           {user.id > 0 && (
             <button
               type="button"
@@ -323,18 +333,107 @@ function UserMenu({ onLogout }: { onLogout: () => void }) {
                 setOpen(false)
                 setPwOpen(true)
               }}
-              className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left text-[13.5px] font-medium text-ink-2 hover:bg-gold-soft/70 hover:text-navy"
+              className={item}
             >
               <Icon name="lock" size={15} /> Ganti kata sandi
             </button>
           )}
-          <button type="button" onClick={onLogout} className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left text-[13.5px] font-medium text-ink-2 hover:bg-gold-soft/70 hover:text-navy">
+          <button type="button" onClick={onLogout} className={item}>
             <Icon name="logout" size={15} /> Keluar
           </button>
         </div>
       )}
       {pwOpen && <ChangePassword onClose={() => setPwOpen(false)} />}
+      {profileOpen && (
+        <Profile
+          onClose={() => setProfileOpen(false)}
+          onPassword={() => {
+            setProfileOpen(false)
+            setPwOpen(true)
+          }}
+        />
+      )}
     </div>
+  )
+}
+
+function Profile({ onClose, onPassword }: { onClose: () => void; onPassword: () => void }) {
+  const { user, refresh } = useMe()
+  const [busy, setBusy] = useState(false)
+  const toast = useToast()
+  if (!user) return null
+  async function upload(f: File) {
+    setBusy(true)
+    try {
+      const data = await squarePhoto(f)
+      await api.put('/me/photo', { data })
+      refresh()
+      toast('Foto profil diganti')
+    } catch (e) {
+      toast((e as Error).message, 'bad')
+    } finally {
+      setBusy(false)
+    }
+  }
+  async function remove() {
+    setBusy(true)
+    try {
+      await api.del('/me/photo')
+      refresh()
+      toast('Foto profil dihapus')
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <Modal open title="Profil saya" onClose={onClose} footer={<Button onClick={onClose}>Tutup</Button>}>
+      <div className="flex flex-col items-center gap-4 text-center sm:flex-row sm:items-center sm:text-left">
+        <Avatar name={user.name} photo={user.photo} size={104} className="text-[34px]" />
+        <div className="min-w-0 flex-1">
+          <div className="text-[19px] font-semibold text-ink">{user.name}</div>
+          <div className="text-[13.5px] text-muted">
+            {user.role}
+            {user.username ? ` · @${user.username}` : ''}
+          </div>
+          <div className="mt-3 flex flex-wrap justify-center gap-2 sm:justify-start">
+            <label className={`inline-flex h-9 cursor-pointer items-center gap-2 rounded-full border border-transparent px-4 text-[14px] font-semibold text-navy btn-gold ${busy ? 'pointer-events-none opacity-60' : ''}`}>
+              <Icon name="camera" size={16} /> {busy ? 'Menyimpan…' : user.photo ? 'Ganti foto' : 'Pasang foto'}
+              <input type="file" accept="image/*" className="hidden" onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} />
+            </label>
+            {user.photo && (
+              <Button onClick={remove} disabled={busy} icon="trash">
+                Hapus foto
+              </Button>
+            )}
+          </div>
+        </div>
+      </div>
+      <div className="mt-5 grid gap-3 rounded-2xl bg-canvas/70 p-4 text-[13.5px] sm:grid-cols-2">
+        <div>
+          <div className="text-muted">Nama</div>
+          <div className="font-medium text-ink">{user.name}</div>
+        </div>
+        <div>
+          <div className="text-muted">Nama pengguna</div>
+          <div className="font-medium text-ink">{user.username ?? '–'}</div>
+        </div>
+        <div>
+          <div className="text-muted">Peran</div>
+          <div className="font-medium text-ink">{user.role}</div>
+        </div>
+        {user.id > 0 && (
+          <div>
+            <div className="text-muted">Kata sandi</div>
+            <button type="button" onClick={onPassword} className="font-medium text-navy underline">
+              Ganti kata sandi
+            </button>
+          </div>
+        )}
+      </div>
+      <p className="mt-3 text-[12.5px] text-muted">
+        Foto dipotong persegi dan dikecilkan otomatis. Nama dan peran diatur owner di Pengaturan › Akun tim{user.id === -1 ? '' : ', karena dipakai untuk komisi dan KPI'}.
+      </p>
+    </Modal>
   )
 }
 

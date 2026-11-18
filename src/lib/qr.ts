@@ -165,6 +165,9 @@ body{font-family:Arial,Helvetica,sans-serif;color:#000}
 .cl{font-size:8.5pt;margin-top:1.2mm;word-break:break-word}
 @media screen{body{background:#eee;padding:12px}.lb{background:#fff;margin:0 auto 6px}.sheet{background:#fff;width:194mm;margin:0 auto}}
 </style></head><body>${size === 'a4' ? `<div class="sheet">${labels}</div>` : labels}
-<script>window.onload=function(){setTimeout(function(){window.print()},300)}</script></body></html>`)
+</body></html>`)
   win.document.close()
+  // tanpa skrip di dalam jendela cetak (dilarang Content-Security-Policy); cetak dipanggil dari portal
+  win.focus()
+  setTimeout(() => win.print(), 400)
 }
